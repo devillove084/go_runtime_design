@@ -7,6 +7,7 @@
 package types
 
 import (
+	"errors"
 	"go/ast"
 	"go/token"
 )
@@ -25,9 +26,7 @@ func (check *Checker) assignment(x *operand, T Type, context string) {
 	case constant_, variable, mapindex, value, commaok, commaerr:
 		// ok
 	default:
-		// we may get here because of other problems (issue #39634, crash 12)
-		check.errorf(x, 0, "cannot assign %s to %s in %s", x, T, context)
-		return
+		unreachable()
 	}
 
 	if isUntyped(x.typ) {
@@ -45,35 +44,27 @@ func (check *Checker) assignment(x *operand, T Type, context string) {
 			}
 			target = Default(x.typ)
 		}
-		newType, val, code := check.implicitTypeAndValue(x, target)
-		if code != 0 {
+		if err := check.canConvertUntyped(x, target); err != nil {
 			msg := check.sprintf("cannot use %s as %s value in %s", x, target, context)
-			switch code {
-			case _TruncatedFloat:
-				msg += " (truncated)"
-			case _NumericOverflow:
-				msg += " (overflows)"
-			default:
-				code = _IncompatibleAssign
+			code := _IncompatibleAssign
+			var ierr Error
+			if errors.As(err, &ierr) {
+				// Preserve these inner errors, as they are informative.
+				switch ierr.go116code {
+				case _TruncatedFloat:
+					msg += " (truncated)"
+					code = ierr.go116code
+				case _NumericOverflow:
+					msg += " (overflows)"
+					code = ierr.go116code
+				}
 			}
 			check.error(x, code, msg)
 			x.mode = invalid
 			return
 		}
-		if val != nil {
-			x.val = val
-			check.updateExprVal(x.expr, val)
-		}
-		if newType != x.typ {
-			x.typ = newType
-			check.updateExprType(x.expr, newType, false)
-		}
 	}
-
-	// A generic (non-instantiated) function value cannot be assigned to a variable.
-	if sig := asSignature(x.typ); sig != nil && len(sig.tparams) > 0 {
-		check.errorf(x, _Todo, "cannot use generic function %s without instantiation in %s", x, context)
-	}
+	// x.typ is typed
 
 	// spec: "If a left-hand side is the blank identifier, any typed or
 	// non-constant value except for the predeclared identifier nil may
@@ -157,7 +148,6 @@ func (check *Checker) initVar(lhs *Var, x *operand, context string) Type {
 
 func (check *Checker) assignVar(lhs ast.Expr, x *operand) Type {
 	if x.mode == invalid || x.typ == Typ[Invalid] {
-		check.useLHS(lhs)
 		return nil
 	}
 
@@ -231,27 +221,25 @@ func (check *Checker) assignVar(lhs ast.Expr, x *operand) Type {
 
 // If returnPos is valid, initVars is called to type-check the assignment of
 // return expressions, and returnPos is the position of the return statement.
-func (check *Checker) initVars(lhs []*Var, origRHS []ast.Expr, returnPos token.Pos) {
-	rhs, commaOk := check.exprList(origRHS, len(lhs) == 2 && !returnPos.IsValid())
-
-	if len(lhs) != len(rhs) {
-		// invalidate lhs
+func (check *Checker) initVars(lhs []*Var, rhs []ast.Expr, returnPos token.Pos) {
+	l := len(lhs)
+	get, r, commaOk := unpack(func(x *operand, i int) { check.multiExpr(x, rhs[i]) }, len(rhs), l == 2 && !returnPos.IsValid())
+	if get == nil || l != r {
+		// invalidate lhs and use rhs
 		for _, obj := range lhs {
 			if obj.typ == nil {
 				obj.typ = Typ[Invalid]
 			}
 		}
-		// don't report an error if we already reported one
-		for _, x := range rhs {
-			if x.mode == invalid {
-				return
-			}
+		if get == nil {
+			return // error reported by unpack
 		}
+		check.useGetter(get, r)
 		if returnPos.IsValid() {
-			check.errorf(atPos(returnPos), _WrongResultCount, "wrong number of return values (want %d, got %d)", len(lhs), len(rhs))
+			check.errorf(atPos(returnPos), _WrongResultCount, "wrong number of return values (want %d, got %d)", l, r)
 			return
 		}
-		check.errorf(rhs[0], _WrongAssignCount, "cannot initialize %d variables with %d values", len(lhs), len(rhs))
+		check.errorf(rhs[0], _WrongAssignCount, "cannot initialize %d variables with %d values", l, r)
 		return
 	}
 
@@ -260,46 +248,50 @@ func (check *Checker) initVars(lhs []*Var, origRHS []ast.Expr, returnPos token.P
 		context = "return statement"
 	}
 
+	var x operand
 	if commaOk {
 		var a [2]Type
 		for i := range a {
-			a[i] = check.initVar(lhs[i], rhs[i], context)
+			get(&x, i)
+			a[i] = check.initVar(lhs[i], &x, context)
 		}
-		check.recordCommaOkTypes(origRHS[0], a)
+		check.recordCommaOkTypes(rhs[0], a)
 		return
 	}
 
 	for i, lhs := range lhs {
-		check.initVar(lhs, rhs[i], context)
+		get(&x, i)
+		check.initVar(lhs, &x, context)
 	}
 }
 
-func (check *Checker) assignVars(lhs, origRHS []ast.Expr) {
-	rhs, commaOk := check.exprList(origRHS, len(lhs) == 2)
-
-	if len(lhs) != len(rhs) {
+func (check *Checker) assignVars(lhs, rhs []ast.Expr) {
+	l := len(lhs)
+	get, r, commaOk := unpack(func(x *operand, i int) { check.multiExpr(x, rhs[i]) }, len(rhs), l == 2)
+	if get == nil {
 		check.useLHS(lhs...)
-		// don't report an error if we already reported one
-		for _, x := range rhs {
-			if x.mode == invalid {
-				return
-			}
-		}
-		check.errorf(rhs[0], _WrongAssignCount, "cannot assign %d values to %d variables", len(rhs), len(lhs))
+		return // error reported by unpack
+	}
+	if l != r {
+		check.useGetter(get, r)
+		check.errorf(rhs[0], _WrongAssignCount, "cannot assign %d values to %d variables", r, l)
 		return
 	}
 
+	var x operand
 	if commaOk {
 		var a [2]Type
 		for i := range a {
-			a[i] = check.assignVar(lhs[i], rhs[i])
+			get(&x, i)
+			a[i] = check.assignVar(lhs[i], &x)
 		}
-		check.recordCommaOkTypes(origRHS[0], a)
+		check.recordCommaOkTypes(rhs[0], a)
 		return
 	}
 
 	for i, lhs := range lhs {
-		check.assignVar(lhs, rhs[i])
+		get(&x, i)
+		check.assignVar(lhs, &x)
 	}
 }
 

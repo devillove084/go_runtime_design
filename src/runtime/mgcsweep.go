@@ -153,13 +153,13 @@ func finishsweep_m() {
 	nextMarkBitArenaEpoch()
 }
 
-func bgsweep() {
+func bgsweep(c chan int) {
 	sweep.g = getg()
 
 	lockInit(&sweep.lock, lockRankSweep)
 	lock(&sweep.lock)
 	sweep.parked = true
-	gcenable_setup <- 1
+	c <- 1
 	goparkunlock(&sweep.lock, waitReasonGCSweepWait, traceEvGoBlock, 1)
 
 	for {
@@ -183,133 +183,66 @@ func bgsweep() {
 	}
 }
 
-// sweepLocker acquires sweep ownership of spans and blocks sweep
-// completion.
-type sweepLocker struct {
-	// sweepGen is the sweep generation of the heap.
-	sweepGen uint32
-	// blocking indicates that this tracker is blocking sweep
-	// completion, usually as a result of acquiring sweep
-	// ownership of at least one span.
-	blocking bool
-}
-
-// sweepLocked represents sweep ownership of a span.
-type sweepLocked struct {
-	*mspan
-}
-
-func newSweepLocker() sweepLocker {
-	return sweepLocker{
-		sweepGen: mheap_.sweepgen,
-	}
-}
-
-// tryAcquire attempts to acquire sweep ownership of span s. If it
-// successfully acquires ownership, it blocks sweep completion.
-func (l *sweepLocker) tryAcquire(s *mspan) (sweepLocked, bool) {
-	// Check before attempting to CAS.
-	if atomic.Load(&s.sweepgen) != l.sweepGen-2 {
-		return sweepLocked{}, false
-	}
-	// Add ourselves to sweepers before potentially taking
-	// ownership.
-	l.blockCompletion()
-	// Attempt to acquire sweep ownership of s.
-	if !atomic.Cas(&s.sweepgen, l.sweepGen-2, l.sweepGen-1) {
-		return sweepLocked{}, false
-	}
-	return sweepLocked{s}, true
-}
-
-// blockCompletion blocks sweep completion without acquiring any
-// specific spans.
-func (l *sweepLocker) blockCompletion() {
-	if !l.blocking {
-		atomic.Xadd(&mheap_.sweepers, +1)
-		l.blocking = true
-	}
-}
-
-func (l *sweepLocker) dispose() {
-	if !l.blocking {
-		return
-	}
-	// Decrement the number of active sweepers and if this is the
-	// last one, mark sweep as complete.
-	l.blocking = false
-	if atomic.Xadd(&mheap_.sweepers, -1) == 0 && atomic.Load(&mheap_.sweepDrained) != 0 {
-		l.sweepIsDone()
-	}
-}
-
-func (l *sweepLocker) sweepIsDone() {
-	if debug.gcpacertrace > 0 {
-		print("pacer: sweep done at heap size ", gcController.heapLive>>20, "MB; allocated ", (gcController.heapLive-mheap_.sweepHeapLiveBasis)>>20, "MB during sweep; swept ", mheap_.pagesSwept, " pages at ", mheap_.sweepPagesPerByte, " pages/byte\n")
-	}
-}
-
 // sweepone sweeps some unswept heap span and returns the number of pages returned
 // to the heap, or ^uintptr(0) if there was nothing to sweep.
 func sweepone() uintptr {
 	_g_ := getg()
+	sweepRatio := mheap_.sweepPagesPerByte // For debugging
 
 	// increment locks to ensure that the goroutine is not preempted
 	// in the middle of sweep thus leaving the span in an inconsistent state for next GC
 	_g_.m.locks++
-	if atomic.Load(&mheap_.sweepDrained) != 0 {
+	if atomic.Load(&mheap_.sweepdone) != 0 {
 		_g_.m.locks--
 		return ^uintptr(0)
 	}
-	// TODO(austin): sweepone is almost always called in a loop;
-	// lift the sweepLocker into its callers.
-	sl := newSweepLocker()
+	atomic.Xadd(&mheap_.sweepers, +1)
 
 	// Find a span to sweep.
-	npages := ^uintptr(0)
-	var noMoreWork bool
+	var s *mspan
+	sg := mheap_.sweepgen
 	for {
-		s := mheap_.nextSpanForSweep()
+		s = mheap_.nextSpanForSweep()
 		if s == nil {
-			noMoreWork = atomic.Cas(&mheap_.sweepDrained, 0, 1)
+			atomic.Store(&mheap_.sweepdone, 1)
 			break
 		}
 		if state := s.state.get(); state != mSpanInUse {
 			// This can happen if direct sweeping already
 			// swept this span, but in that case the sweep
 			// generation should always be up-to-date.
-			if !(s.sweepgen == sl.sweepGen || s.sweepgen == sl.sweepGen+3) {
-				print("runtime: bad span s.state=", state, " s.sweepgen=", s.sweepgen, " sweepgen=", sl.sweepGen, "\n")
+			if !(s.sweepgen == sg || s.sweepgen == sg+3) {
+				print("runtime: bad span s.state=", state, " s.sweepgen=", s.sweepgen, " sweepgen=", sg, "\n")
 				throw("non in-use span in unswept list")
 			}
 			continue
 		}
-		if s, ok := sl.tryAcquire(s); ok {
-			// Sweep the span we found.
-			npages = s.npages
-			if s.sweep(false) {
-				// Whole span was freed. Count it toward the
-				// page reclaimer credit since these pages can
-				// now be used for span allocation.
-				atomic.Xadduintptr(&mheap_.reclaimCredit, npages)
-			} else {
-				// Span is still in-use, so this returned no
-				// pages to the heap and the span needs to
-				// move to the swept in-use list.
-				npages = 0
-			}
+		if s.sweepgen == sg-2 && atomic.Cas(&s.sweepgen, sg-2, sg-1) {
 			break
 		}
 	}
 
-	sl.dispose()
+	// Sweep the span we found.
+	npages := ^uintptr(0)
+	if s != nil {
+		npages = s.npages
+		if s.sweep(false) {
+			// Whole span was freed. Count it toward the
+			// page reclaimer credit since these pages can
+			// now be used for span allocation.
+			atomic.Xadduintptr(&mheap_.reclaimCredit, npages)
+		} else {
+			// Span is still in-use, so this returned no
+			// pages to the heap and the span needs to
+			// move to the swept in-use list.
+			npages = 0
+		}
+	}
 
-	if noMoreWork {
-		// The sweep list is empty. There may still be
-		// concurrent sweeps running, but we're at least very
-		// close to done sweeping.
-
-		// Move the scavenge gen forward (signalling
+	// Decrement the number of active sweepers and if this is the
+	// last one print trace information.
+	if atomic.Xadd(&mheap_.sweepers, -1) == 0 && atomic.Load(&mheap_.sweepdone) != 0 {
+		// Since the sweeper is done, move the scavenge gen forward (signalling
 		// that there's new work to do) and wake the scavenger.
 		//
 		// The scavenger is signaled by the last sweeper because once
@@ -329,23 +262,23 @@ func sweepone() uintptr {
 		// for us to wake the scavenger directly via wakeScavenger, since
 		// it could allocate. Ask sysmon to do it for us instead.
 		readyForScavenger()
-	}
 
+		if debug.gcpacertrace > 0 {
+			print("pacer: sweep done at heap size ", memstats.heap_live>>20, "MB; allocated ", (memstats.heap_live-mheap_.sweepHeapLiveBasis)>>20, "MB during sweep; swept ", mheap_.pagesSwept, " pages at ", sweepRatio, " pages/byte\n")
+		}
+	}
 	_g_.m.locks--
 	return npages
 }
 
-// isSweepDone reports whether all spans are swept.
+// isSweepDone reports whether all spans are swept or currently being swept.
 //
 // Note that this condition may transition from false to true at any
 // time as the sweeper runs. It may transition from true to false if a
 // GC runs; to prevent that the caller must be non-preemptible or must
 // somehow block GC progress.
 func isSweepDone() bool {
-	// Check that all spans have at least begun sweeping and there
-	// are no active sweepers. If both are true, then all spans
-	// have finished sweeping.
-	return atomic.Load(&mheap_.sweepDrained) != 0 && atomic.Load(&mheap_.sweepers) == 0
+	return mheap_.sweepdone != 0
 }
 
 // Returns only when span s has been swept.
@@ -359,19 +292,20 @@ func (s *mspan) ensureSwept() {
 		throw("mspan.ensureSwept: m is not locked")
 	}
 
-	sl := newSweepLocker()
-	// The caller must be sure that the span is a mSpanInUse span.
-	if s, ok := sl.tryAcquire(s); ok {
-		s.sweep(false)
-		sl.dispose()
+	sg := mheap_.sweepgen
+	spangen := atomic.Load(&s.sweepgen)
+	if spangen == sg || spangen == sg+3 {
 		return
 	}
-	sl.dispose()
-
+	// The caller must be sure that the span is a mSpanInUse span.
+	if atomic.Cas(&s.sweepgen, sg-2, sg-1) {
+		s.sweep(false)
+		return
+	}
 	// unfortunate condition, and we don't have efficient means to wait
 	for {
 		spangen := atomic.Load(&s.sweepgen)
-		if spangen == sl.sweepGen || spangen == sl.sweepGen+3 {
+		if spangen == sg || spangen == sg+3 {
 			break
 		}
 		osyield()
@@ -383,21 +317,13 @@ func (s *mspan) ensureSwept() {
 // Returns true if the span was returned to heap.
 // If preserve=true, don't return it to heap nor relink in mcentral lists;
 // caller takes care of it.
-func (sl *sweepLocked) sweep(preserve bool) bool {
+func (s *mspan) sweep(preserve bool) bool {
 	// It's critical that we enter this function with preemption disabled,
 	// GC must not start while we are in the middle of this function.
 	_g_ := getg()
 	if _g_.m.locks == 0 && _g_.m.mallocing == 0 && _g_ != _g_.m.g0 {
 		throw("mspan.sweep: m is not locked")
 	}
-
-	s := sl.mspan
-	if !preserve {
-		// We'll release ownership of this span. Nil it out to
-		// prevent the caller from accidentally using it.
-		sl.mspan = nil
-	}
-
 	sweepgen := mheap_.sweepgen
 	if state := s.state.get(); state != mSpanInUse || s.sweepgen != sweepgen-1 {
 		print("mspan.sweep: state=", state, " sweepgen=", s.sweepgen, " mheap.sweepgen=", sweepgen, "\n")
@@ -430,10 +356,11 @@ func (sl *sweepLocked) sweep(preserve bool) bool {
 	//    If such object is not marked, we need to queue all finalizers at once.
 	// Both 1 and 2 are possible at the same time.
 	hadSpecials := s.specials != nil
-	siter := newSpecialsIter(s)
-	for siter.valid() {
+	specialp := &s.specials
+	special := *specialp
+	for special != nil {
 		// A finalizer can be set for an inner byte of an object, find object beginning.
-		objIndex := uintptr(siter.s.offset) / size
+		objIndex := uintptr(special.offset) / size
 		p := s.base() + objIndex*size
 		mbits := s.markBitsForIndex(objIndex)
 		if !mbits.isMarked() {
@@ -441,7 +368,7 @@ func (sl *sweepLocked) sweep(preserve bool) bool {
 			// Pass 1: see if it has at least one finalizer.
 			hasFin := false
 			endOffset := p - s.base() + size
-			for tmp := siter.s; tmp != nil && uintptr(tmp.offset) < endOffset; tmp = tmp.next {
+			for tmp := special; tmp != nil && uintptr(tmp.offset) < endOffset; tmp = tmp.next {
 				if tmp.kind == _KindSpecialFinalizer {
 					// Stop freeing of object if it has a finalizer.
 					mbits.setMarkedNonAtomic()
@@ -450,31 +377,27 @@ func (sl *sweepLocked) sweep(preserve bool) bool {
 				}
 			}
 			// Pass 2: queue all finalizers _or_ handle profile record.
-			for siter.valid() && uintptr(siter.s.offset) < endOffset {
+			for special != nil && uintptr(special.offset) < endOffset {
 				// Find the exact byte for which the special was setup
 				// (as opposed to object beginning).
-				special := siter.s
 				p := s.base() + uintptr(special.offset)
 				if special.kind == _KindSpecialFinalizer || !hasFin {
-					siter.unlinkAndNext()
-					freeSpecial(special, unsafe.Pointer(p), size)
+					// Splice out special record.
+					y := special
+					special = special.next
+					*specialp = special
+					freespecial(y, unsafe.Pointer(p), size)
 				} else {
-					// The object has finalizers, so we're keeping it alive.
-					// All other specials only apply when an object is freed,
-					// so just keep the special record.
-					siter.next()
+					// This is profile record, but the object has finalizers (so kept alive).
+					// Keep special record.
+					specialp = &special.next
+					special = *specialp
 				}
 			}
 		} else {
-			// object is still live
-			if siter.s.kind == _KindSpecialReachable {
-				special := siter.unlinkAndNext()
-				(*specialReachable)(unsafe.Pointer(special)).reachable = true
-				freeSpecial(special, unsafe.Pointer(p), size)
-			} else {
-				// keep special record
-				siter.next()
-			}
+			// object is still live: keep special record
+			specialp = &special.next
+			special = *specialp
 		}
 	}
 	if hadSpecials && s.specials == nil {
@@ -722,7 +645,7 @@ retry:
 	sweptBasis := atomic.Load64(&mheap_.pagesSweptBasis)
 
 	// Fix debt if necessary.
-	newHeapLive := uintptr(atomic.Load64(&gcController.heapLive)-mheap_.sweepHeapLiveBasis) + spanBytes
+	newHeapLive := uintptr(atomic.Load64(&memstats.heap_live)-mheap_.sweepHeapLiveBasis) + spanBytes
 	pagesTarget := int64(mheap_.sweepPagesPerByte*float64(newHeapLive)) - int64(callerSweepPages)
 	for pagesTarget > int64(atomic.Load64(&mheap_.pagesSwept)-sweptBasis) {
 		if sweepone() == ^uintptr(0) {

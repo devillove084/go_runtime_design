@@ -27,7 +27,7 @@ const (
 	removeDeadValues                 = true
 )
 
-// deadcode indicates whether rewrite should try to remove any values that become dead.
+// deadcode indicates that rewrite should try to remove any values that become dead.
 func applyRewrite(f *Func, rb blockRewriter, rv valueRewriter, deadcode deadValueChoice) {
 	// repeat rewrites until we find no more rewrites
 	pendingLines := f.cachedLineStarts // Holds statement boundaries that need to be moved to a new value/block
@@ -521,18 +521,6 @@ func shiftIsBounded(v *Value) bool {
 	return v.AuxInt != 0
 }
 
-// canonLessThan returns whether x is "ordered" less than y, for purposes of normalizing
-// generated code as much as possible.
-func canonLessThan(x, y *Value) bool {
-	if x.Op != y.Op {
-		return x.Op < y.Op
-	}
-	if !x.Pos.SameFileAndLine(y.Pos) {
-		return x.Pos.Before(y.Pos)
-	}
-	return x.ID < y.ID
-}
-
 // truncate64Fto32F converts a float64 value to a float32 preserving the bit pattern
 // of the mantissa. It will panic if the truncation results in lost information.
 func truncate64Fto32F(f float64) float32 {
@@ -690,53 +678,43 @@ func opToAuxInt(o Op) int64 {
 	return int64(o)
 }
 
-// Aux is an interface to hold miscellaneous data in Blocks and Values.
-type Aux interface {
-	CanBeAnSSAAux()
+func auxToString(i interface{}) string {
+	return i.(string)
 }
-
-// stringAux wraps string values for use in Aux.
-type stringAux string
-
-func (stringAux) CanBeAnSSAAux() {}
-
-func auxToString(i Aux) string {
-	return string(i.(stringAux))
-}
-func auxToSym(i Aux) Sym {
+func auxToSym(i interface{}) Sym {
 	// TODO: kind of a hack - allows nil interface through
 	s, _ := i.(Sym)
 	return s
 }
-func auxToType(i Aux) *types.Type {
+func auxToType(i interface{}) *types.Type {
 	return i.(*types.Type)
 }
-func auxToCall(i Aux) *AuxCall {
+func auxToCall(i interface{}) *AuxCall {
 	return i.(*AuxCall)
 }
-func auxToS390xCCMask(i Aux) s390x.CCMask {
+func auxToS390xCCMask(i interface{}) s390x.CCMask {
 	return i.(s390x.CCMask)
 }
-func auxToS390xRotateParams(i Aux) s390x.RotateParams {
+func auxToS390xRotateParams(i interface{}) s390x.RotateParams {
 	return i.(s390x.RotateParams)
 }
 
-func StringToAux(s string) Aux {
-	return stringAux(s)
-}
-func symToAux(s Sym) Aux {
+func stringToAux(s string) interface{} {
 	return s
 }
-func callToAux(s *AuxCall) Aux {
+func symToAux(s Sym) interface{} {
 	return s
 }
-func typeToAux(t *types.Type) Aux {
+func callToAux(s *AuxCall) interface{} {
+	return s
+}
+func typeToAux(t *types.Type) interface{} {
 	return t
 }
-func s390xCCMaskToAux(c s390x.CCMask) Aux {
+func s390xCCMaskToAux(c s390x.CCMask) interface{} {
 	return c
 }
-func s390xRotateParamsToAux(r s390x.RotateParams) Aux {
+func s390xRotateParamsToAux(r s390x.RotateParams) interface{} {
 	return r
 }
 
@@ -747,7 +725,7 @@ func uaddOvf(a, b int64) bool {
 
 // de-virtualize an InterCall
 // 'sym' is the symbol for the itab
-func devirt(v *Value, aux Aux, sym Sym, offset int64) *AuxCall {
+func devirt(v *Value, aux interface{}, sym Sym, offset int64) *AuxCall {
 	f := v.Block.Func
 	n, ok := sym.(*obj.LSym)
 	if !ok {
@@ -765,12 +743,12 @@ func devirt(v *Value, aux Aux, sym Sym, offset int64) *AuxCall {
 		return nil
 	}
 	va := aux.(*AuxCall)
-	return StaticAuxCall(lsym, va.abiInfo)
+	return StaticAuxCall(lsym, va.args, va.results)
 }
 
 // de-virtualize an InterLECall
 // 'sym' is the symbol for the itab
-func devirtLESym(v *Value, aux Aux, sym Sym, offset int64) *obj.LSym {
+func devirtLESym(v *Value, aux interface{}, sym Sym, offset int64) *obj.LSym {
 	n, ok := sym.(*obj.LSym)
 	if !ok {
 		return nil
@@ -793,8 +771,7 @@ func devirtLESym(v *Value, aux Aux, sym Sym, offset int64) *obj.LSym {
 
 func devirtLECall(v *Value, sym *obj.LSym) *Value {
 	v.Op = OpStaticLECall
-	auxcall := v.Aux.(*AuxCall)
-	auxcall.Fn = sym
+	v.Aux.(*AuxCall).Fn = sym
 	v.RemoveArg(0)
 	return v
 }
@@ -859,13 +836,13 @@ func disjoint(p1 *Value, n1 int64, p2 *Value, n2 int64) bool {
 		if p2.Op == OpAddr || p2.Op == OpLocalAddr || p2.Op == OpSP {
 			return true
 		}
-		return (p2.Op == OpArg || p2.Op == OpArgIntReg) && p1.Args[0].Op == OpSP
-	case OpArg, OpArgIntReg:
+		return p2.Op == OpArg && p1.Args[0].Op == OpSP
+	case OpArg:
 		if p2.Op == OpSP || p2.Op == OpLocalAddr {
 			return true
 		}
 	case OpSP:
-		return p2.Op == OpAddr || p2.Op == OpLocalAddr || p2.Op == OpArg || p2.Op == OpArgIntReg || p2.Op == OpSP
+		return p2.Op == OpAddr || p2.Op == OpLocalAddr || p2.Op == OpArg || p2.Op == OpSP
 	}
 	return false
 }
@@ -1414,7 +1391,7 @@ func isPPC64WordRotateMask(v64 int64) bool {
 	return (v&vp == 0 || vn&vpn == 0) && v != 0
 }
 
-// Compress mask and shift into single value of the form
+// Compress mask and and shift into single value of the form
 // me | mb<<8 | rotate<<16 | nbits<<24 where me and mb can
 // be used to regenerate the input mask.
 func encodePPC64RotateMask(rotate, mask, nbits int64) int64 {
@@ -1492,7 +1469,7 @@ func mergePPC64AndSrwi(m, s int64) int64 {
 	if !isPPC64WordRotateMask(mask) {
 		return 0
 	}
-	return encodePPC64RotateMask((32-s)&31, mask, 32)
+	return encodePPC64RotateMask(32-s, mask, 32)
 }
 
 // Test if a shift right feeding into a CLRLSLDI can be merged into RLWINM.
@@ -1612,18 +1589,18 @@ func needRaceCleanup(sym *AuxCall, v *Value) bool {
 	if !f.Config.Race {
 		return false
 	}
-	if !isSameCall(sym, "runtime.racefuncenter") && !isSameCall(sym, "runtime.racefuncexit") {
+	if !isSameCall(sym, "runtime.racefuncenter") && !isSameCall(sym, "runtime.racefuncenterfp") && !isSameCall(sym, "runtime.racefuncexit") {
 		return false
 	}
 	for _, b := range f.Blocks {
 		for _, v := range b.Values {
 			switch v.Op {
-			case OpStaticCall, OpStaticLECall:
-				// Check for racefuncenter will encounter racefuncexit and vice versa.
+			case OpStaticCall:
+				// Check for racefuncenter/racefuncenterfp will encounter racefuncexit and vice versa.
 				// Allow calls to panic*
 				s := v.Aux.(*AuxCall).Fn.String()
 				switch s {
-				case "runtime.racefuncenter", "runtime.racefuncexit",
+				case "runtime.racefuncenter", "runtime.racefuncenterfp", "runtime.racefuncexit",
 					"runtime.panicdivide", "runtime.panicwrap",
 					"runtime.panicshift":
 					continue
@@ -1633,20 +1610,15 @@ func needRaceCleanup(sym *AuxCall, v *Value) bool {
 				return false
 			case OpPanicBounds, OpPanicExtend:
 				// Note: these are panic generators that are ok (like the static calls above).
-			case OpClosureCall, OpInterCall, OpClosureLECall, OpInterLECall:
+			case OpClosureCall, OpInterCall:
 				// We must keep the race functions if there are any other call types.
 				return false
 			}
 		}
 	}
 	if isSameCall(sym, "runtime.racefuncenter") {
-		// TODO REGISTER ABI this needs to be cleaned up.
 		// If we're removing racefuncenter, remove its argument as well.
 		if v.Args[0].Op != OpStore {
-			if v.Op == OpStaticLECall {
-				// there is no store, yet.
-				return true
-			}
 			return false
 		}
 		mem := v.Args[0].Args[2]

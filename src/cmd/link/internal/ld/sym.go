@@ -36,7 +36,6 @@ import (
 	"cmd/internal/sys"
 	"cmd/link/internal/loader"
 	"cmd/link/internal/sym"
-	"internal/buildcfg"
 	"log"
 	"runtime"
 )
@@ -54,8 +53,8 @@ func linknew(arch *sys.Arch) *Link {
 		generatorSyms: make(map[loader.Sym]generatorFunc),
 	}
 
-	if buildcfg.GOARCH != arch.Name {
-		log.Fatalf("invalid buildcfg.GOARCH %s (want %s)", buildcfg.GOARCH, arch.Name)
+	if objabi.GOARCH != arch.Name {
+		log.Fatalf("invalid objabi.GOARCH %s (want %s)", objabi.GOARCH, arch.Name)
 	}
 
 	AtExit(func() {

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build ignore
 // +build ignore
 
 // mkpreempt generates the asyncPreempt functions for each
@@ -230,14 +229,10 @@ func genAMD64() {
 		if reg == "SP" || reg == "BP" {
 			continue
 		}
-		if !strings.HasPrefix(reg, "X") {
-			l.add("MOVQ", reg, 8)
-		}
-	}
-	lSSE := layout{stack: l.stack, sp: "SP"}
-	for _, reg := range regNamesAMD64 {
 		if strings.HasPrefix(reg, "X") {
-			lSSE.add("MOVUPS", reg, 16)
+			l.add("MOVUPS", reg, 16)
+		} else {
+			l.add("MOVQ", reg, 8)
 		}
 	}
 
@@ -248,11 +243,9 @@ func genAMD64() {
 	p("// Save flags before clobbering them")
 	p("PUSHFQ")
 	p("// obj doesn't understand ADD/SUB on SP, but does understand ADJSP")
-	p("ADJSP $%d", lSSE.stack)
+	p("ADJSP $%d", l.stack)
 	p("// But vet doesn't know ADJSP, so suppress vet stack checking")
 	p("NOP SP")
-
-	l.save()
 
 	// Apparently, the signal handling code path in darwin kernel leaves
 	// the upper bits of Y registers in a dirty state, which causes
@@ -265,11 +258,10 @@ func genAMD64() {
 	p("VZEROUPPER")
 	p("#endif")
 
-	lSSE.save()
+	l.save()
 	p("CALL ·asyncPreempt2(SB)")
-	lSSE.restore()
 	l.restore()
-	p("ADJSP $%d", -lSSE.stack)
+	p("ADJSP $%d", -l.stack)
 	p("POPFQ")
 	p("POPQ BP")
 	p("RET")

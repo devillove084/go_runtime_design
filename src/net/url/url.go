@@ -425,31 +425,31 @@ func (u *Userinfo) String() string {
 	return s
 }
 
-// Maybe rawURL is of the form scheme:path.
+// Maybe rawurl is of the form scheme:path.
 // (Scheme must be [a-zA-Z][a-zA-Z0-9+-.]*)
-// If so, return scheme, path; else return "", rawURL.
-func getScheme(rawURL string) (scheme, path string, err error) {
-	for i := 0; i < len(rawURL); i++ {
-		c := rawURL[i]
+// If so, return scheme, path; else return "", rawurl.
+func getscheme(rawurl string) (scheme, path string, err error) {
+	for i := 0; i < len(rawurl); i++ {
+		c := rawurl[i]
 		switch {
 		case 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z':
 		// do nothing
 		case '0' <= c && c <= '9' || c == '+' || c == '-' || c == '.':
 			if i == 0 {
-				return "", rawURL, nil
+				return "", rawurl, nil
 			}
 		case c == ':':
 			if i == 0 {
 				return "", "", errors.New("missing protocol scheme")
 			}
-			return rawURL[:i], rawURL[i+1:], nil
+			return rawurl[:i], rawurl[i+1:], nil
 		default:
 			// we have encountered an invalid character,
 			// so there is no valid scheme
-			return "", rawURL, nil
+			return "", rawurl, nil
 		}
 	}
-	return "", rawURL, nil
+	return "", rawurl, nil
 }
 
 // split slices s into two substrings separated by the first occurrence of
@@ -466,15 +466,15 @@ func split(s string, sep byte, cutc bool) (string, string) {
 	return s[:i], s[i:]
 }
 
-// Parse parses a raw url into a URL structure.
+// Parse parses rawurl into a URL structure.
 //
-// The url may be relative (a path, without a host) or absolute
+// The rawurl may be relative (a path, without a host) or absolute
 // (starting with a scheme). Trying to parse a hostname and path
 // without a scheme is invalid but may not necessarily return an
 // error, due to parsing ambiguities.
-func Parse(rawURL string) (*URL, error) {
+func Parse(rawurl string) (*URL, error) {
 	// Cut off #frag
-	u, frag := split(rawURL, '#', true)
+	u, frag := split(rawurl, '#', true)
 	url, err := parse(u, false)
 	if err != nil {
 		return nil, &Error{"parse", u, err}
@@ -483,20 +483,20 @@ func Parse(rawURL string) (*URL, error) {
 		return url, nil
 	}
 	if err = url.setFragment(frag); err != nil {
-		return nil, &Error{"parse", rawURL, err}
+		return nil, &Error{"parse", rawurl, err}
 	}
 	return url, nil
 }
 
-// ParseRequestURI parses a raw url into a URL structure. It assumes that
-// url was received in an HTTP request, so the url is interpreted
+// ParseRequestURI parses rawurl into a URL structure. It assumes that
+// rawurl was received in an HTTP request, so the rawurl is interpreted
 // only as an absolute URI or an absolute path.
-// The string url is assumed not to have a #fragment suffix.
+// The string rawurl is assumed not to have a #fragment suffix.
 // (Web browsers strip #fragment before sending the URL to a web server.)
-func ParseRequestURI(rawURL string) (*URL, error) {
-	url, err := parse(rawURL, true)
+func ParseRequestURI(rawurl string) (*URL, error) {
+	url, err := parse(rawurl, true)
 	if err != nil {
-		return nil, &Error{"parse", rawURL, err}
+		return nil, &Error{"parse", rawurl, err}
 	}
 	return url, nil
 }
@@ -505,27 +505,27 @@ func ParseRequestURI(rawURL string) (*URL, error) {
 // viaRequest is true, the URL is assumed to have arrived via an HTTP request,
 // in which case only absolute URLs or path-absolute relative URLs are allowed.
 // If viaRequest is false, all forms of relative URLs are allowed.
-func parse(rawURL string, viaRequest bool) (*URL, error) {
+func parse(rawurl string, viaRequest bool) (*URL, error) {
 	var rest string
 	var err error
 
-	if stringContainsCTLByte(rawURL) {
+	if stringContainsCTLByte(rawurl) {
 		return nil, errors.New("net/url: invalid control character in URL")
 	}
 
-	if rawURL == "" && viaRequest {
+	if rawurl == "" && viaRequest {
 		return nil, errors.New("empty url")
 	}
 	url := new(URL)
 
-	if rawURL == "*" {
+	if rawurl == "*" {
 		url.Path = "*"
 		return url, nil
 	}
 
 	// Split off possible leading "http:", "mailto:", etc.
 	// Cannot contain escaped characters.
-	if url.Scheme, rest, err = getScheme(rawURL); err != nil {
+	if url.Scheme, rest, err = getscheme(rawurl); err != nil {
 		return nil, err
 	}
 	url.Scheme = strings.ToLower(url.Scheme)
@@ -1058,11 +1058,11 @@ func (u *URL) IsAbs() bool {
 // may be relative or absolute. Parse returns nil, err on parse
 // failure, otherwise its return value is the same as ResolveReference.
 func (u *URL) Parse(ref string) (*URL, error) {
-	refURL, err := Parse(ref)
+	refurl, err := Parse(ref)
 	if err != nil {
 		return nil, err
 	}
-	return u.ResolveReference(refURL), nil
+	return u.ResolveReference(refurl), nil
 }
 
 // ResolveReference resolves a URI reference to an absolute URI from
@@ -1151,8 +1151,8 @@ func (u *URL) Port() string {
 // splitHostPort separates host and port. If the port is not valid, it returns
 // the entire input as host, and it doesn't check the validity of the host.
 // Unlike net.SplitHostPort, but per RFC 3986, it requires ports to be numeric.
-func splitHostPort(hostPort string) (host, port string) {
-	host = hostPort
+func splitHostPort(hostport string) (host, port string) {
+	host = hostport
 
 	colon := strings.LastIndexByte(host, ':')
 	if colon != -1 && validOptionalPort(host[colon:]) {

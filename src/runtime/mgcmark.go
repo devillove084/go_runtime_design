@@ -56,6 +56,8 @@ const (
 func gcMarkRootPrepare() {
 	assertWorldStopped()
 
+	work.nFlushCacheRoots = 0
+
 	// Compute how many data and BSS root blocks there are.
 	nBlocks := func(bytes uintptr) int {
 		return int(divRoundUp(bytes, rootBlockBytes))
@@ -103,14 +105,7 @@ func gcMarkRootPrepare() {
 	work.nStackRoots = int(atomic.Loaduintptr(&allglen))
 
 	work.markrootNext = 0
-	work.markrootJobs = uint32(fixedRootCount + work.nDataRoots + work.nBSSRoots + work.nSpanRoots + work.nStackRoots)
-
-	// Calculate base indexes of each root type
-	work.baseData = uint32(fixedRootCount)
-	work.baseBSS = work.baseData + uint32(work.nDataRoots)
-	work.baseSpans = work.baseBSS + uint32(work.nBSSRoots)
-	work.baseStacks = work.baseSpans + uint32(work.nSpanRoots)
-	work.baseEnd = work.baseStacks + uint32(work.nStackRoots)
+	work.markrootJobs = uint32(fixedRootCount + work.nFlushCacheRoots + work.nDataRoots + work.nBSSRoots + work.nSpanRoots + work.nStackRoots)
 }
 
 // gcMarkRootCheck checks that all roots have been scanned. It is
@@ -121,26 +116,23 @@ func gcMarkRootCheck() {
 		throw("left over markroot jobs")
 	}
 
+	lock(&allglock)
 	// Check that stacks have been scanned.
-	//
-	// We only check the first nStackRoots Gs that we should have scanned.
-	// Since we don't care about newer Gs (see comment in
-	// gcMarkRootPrepare), no locking is required.
-	i := 0
-	forEachGRace(func(gp *g) {
-		if i >= work.nStackRoots {
-			return
-		}
-
+	var gp *g
+	for i := 0; i < work.nStackRoots; i++ {
+		gp = allgs[i]
 		if !gp.gcscandone {
-			println("gp", gp, "goid", gp.goid,
-				"status", readgstatus(gp),
-				"gcscandone", gp.gcscandone)
-			throw("scan missed a g")
+			goto fail
 		}
+	}
+	unlock(&allglock)
+	return
 
-		i++
-	})
+fail:
+	println("gp", gp, "goid", gp.goid,
+		"status", readgstatus(gp),
+		"gcscandone", gp.gcscandone)
+	throw("scan missed a g")
 }
 
 // ptrmask for an allocation containing a single pointer.
@@ -154,16 +146,28 @@ var oneptrmask = [...]uint8{1}
 //
 //go:nowritebarrier
 func markroot(gcw *gcWork, i uint32) {
+	// TODO(austin): This is a bit ridiculous. Compute and store
+	// the bases in gcMarkRootPrepare instead of the counts.
+	baseFlushCache := uint32(fixedRootCount)
+	baseData := baseFlushCache + uint32(work.nFlushCacheRoots)
+	baseBSS := baseData + uint32(work.nDataRoots)
+	baseSpans := baseBSS + uint32(work.nBSSRoots)
+	baseStacks := baseSpans + uint32(work.nSpanRoots)
+	end := baseStacks + uint32(work.nStackRoots)
+
 	// Note: if you add a case here, please also update heapdump.go:dumproots.
 	switch {
-	case work.baseData <= i && i < work.baseBSS:
+	case baseFlushCache <= i && i < baseData:
+		flushmcache(int(i - baseFlushCache))
+
+	case baseData <= i && i < baseBSS:
 		for _, datap := range activeModules() {
-			markrootBlock(datap.data, datap.edata-datap.data, datap.gcdatamask.bytedata, gcw, int(i-work.baseData))
+			markrootBlock(datap.data, datap.edata-datap.data, datap.gcdatamask.bytedata, gcw, int(i-baseData))
 		}
 
-	case work.baseBSS <= i && i < work.baseSpans:
+	case baseBSS <= i && i < baseSpans:
 		for _, datap := range activeModules() {
-			markrootBlock(datap.bss, datap.ebss-datap.bss, datap.gcbssmask.bytedata, gcw, int(i-work.baseBSS))
+			markrootBlock(datap.bss, datap.ebss-datap.bss, datap.gcbssmask.bytedata, gcw, int(i-baseBSS))
 		}
 
 	case i == fixedRootFinalizers:
@@ -177,18 +181,15 @@ func markroot(gcw *gcWork, i uint32) {
 		// stackfree.
 		systemstack(markrootFreeGStacks)
 
-	case work.baseSpans <= i && i < work.baseStacks:
+	case baseSpans <= i && i < baseStacks:
 		// mark mspan.specials
-		markrootSpans(gcw, int(i-work.baseSpans))
+		markrootSpans(gcw, int(i-baseSpans))
 
 	default:
 		// the rest is scanning goroutine stacks
 		var gp *g
-		if work.baseStacks <= i && i < work.baseEnd {
-			// N.B. Atomic read of allglen in gcMarkRootPrepare
-			// acts as a barrier to ensure that allgs must be large
-			// enough to contain all relevant Gs.
-			gp = allgs[i-work.baseStacks]
+		if baseStacks <= i && i < end {
+			gp = allgs[i-baseStacks]
 		} else {
 			throw("markroot: bad index")
 		}
@@ -866,7 +867,7 @@ func scanframeworker(frame *stkframe, state *stackScanState, gcw *gcWork) {
 	}
 
 	isAsyncPreempt := frame.fn.valid() && frame.fn.funcID == funcID_asyncPreempt
-	isDebugCall := frame.fn.valid() && frame.fn.funcID == funcID_debugCallV2
+	isDebugCall := frame.fn.valid() && frame.fn.funcID == funcID_debugCallV1
 	if state.conservative || isAsyncPreempt || isDebugCall {
 		if debugScanConservative {
 			println("conservatively scanning function", funcname(frame.fn), "at PC", hex(frame.continpc))
@@ -1251,7 +1252,12 @@ func scanobject(b uintptr, gcw *gcWork) {
 	}
 
 	var i uintptr
-	for i = 0; i < n; i, hbits = i+sys.PtrSize, hbits.next() {
+	for i = 0; i < n; i += sys.PtrSize {
+		// Find bits for this word.
+		if i != 0 {
+			// Avoid needless hbits.next() on last iteration.
+			hbits = hbits.next()
+		}
 		// Load bits once. See CL 22712 and issue 16973 for discussion.
 		bits := hbits.bits()
 		if bits&bitScan == 0 {

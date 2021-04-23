@@ -4,7 +4,6 @@
 
 // Go checksum database lookup
 
-//go:build !cmd_go_bootstrap
 // +build !cmd_go_bootstrap
 
 package modfetch
@@ -34,7 +33,7 @@ import (
 
 // useSumDB reports whether to use the Go checksum database for the given module.
 func useSumDB(mod module.Version) bool {
-	return cfg.GOSUMDB != "off" && !module.MatchPrefixPatterns(cfg.GONOSUMDB, mod.Path)
+	return cfg.GOSUMDB != "off" && !cfg.Insecure && !module.MatchPrefixPatterns(cfg.GONOSUMDB, mod.Path)
 }
 
 // lookupSumDB returns the Go checksum database's go.sum lines for the given module,
@@ -185,7 +184,7 @@ func (c *dbClient) initBase() {
 		}
 	})
 	if errors.Is(err, fs.ErrNotExist) {
-		// No proxies, or all proxies failed (with 404, 410, or were allowed
+		// No proxies, or all proxies failed (with 404, 410, or were were allowed
 		// to fall back), or we reached an explicit "direct" or "off".
 		c.base = c.direct
 	} else if err != nil {

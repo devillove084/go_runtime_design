@@ -15,8 +15,8 @@
 package main
 
 import (
-	exec "internal/execabs"
 	"os"
+	exec "internal/execabs"
 	"strings"
 )
 

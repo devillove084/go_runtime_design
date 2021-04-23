@@ -34,12 +34,11 @@ import (
 	"cmd/internal/objabi"
 	"cmd/internal/sys"
 	"cmd/link/internal/ld"
-	"internal/buildcfg"
 )
 
 func Init() (*sys.Arch, ld.Arch) {
 	arch := sys.ArchMIPS64
-	if buildcfg.GOARCH == "mips64le" {
+	if objabi.GOARCH == "mips64le" {
 		arch = sys.ArchMIPS64LE
 	}
 

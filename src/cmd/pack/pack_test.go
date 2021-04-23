@@ -19,6 +19,15 @@ import (
 	"time"
 )
 
+// tmpDir creates a temporary directory and returns its name.
+func tmpDir(t *testing.T) string {
+	name, err := os.MkdirTemp("", "pack")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
 // testCreate creates an archive in the specified directory.
 func testCreate(t *testing.T, dir string) {
 	name := filepath.Join(dir, "pack.a")
@@ -48,13 +57,15 @@ func testCreate(t *testing.T, dir string) {
 // Test that we can create an archive, write to it, and get the same contents back.
 // Tests the rv and then the pv command on a new archive.
 func TestCreate(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
+	defer os.RemoveAll(dir)
 	testCreate(t, dir)
 }
 
 // Test that we can create an archive twice with the same name (Issue 8369).
 func TestCreateTwice(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
+	defer os.RemoveAll(dir)
 	testCreate(t, dir)
 	testCreate(t, dir)
 }
@@ -62,7 +73,8 @@ func TestCreateTwice(t *testing.T) {
 // Test that we can create an archive, put some files in it, and get back a correct listing.
 // Tests the tv command.
 func TestTableOfContents(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
+	defer os.RemoveAll(dir)
 	name := filepath.Join(dir, "pack.a")
 	ar := openArchive(name, os.O_RDWR|os.O_CREATE, nil)
 
@@ -119,7 +131,8 @@ func TestTableOfContents(t *testing.T) {
 // Test that we can create an archive, put some files in it, and get back a file.
 // Tests the x command.
 func TestExtract(t *testing.T) {
-	dir := t.TempDir()
+	dir := tmpDir(t)
+	defer os.RemoveAll(dir)
 	name := filepath.Join(dir, "pack.a")
 	ar := openArchive(name, os.O_RDWR|os.O_CREATE, nil)
 	// Add some entries by hand.
@@ -160,7 +173,8 @@ func TestExtract(t *testing.T) {
 func TestHello(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 
-	dir := t.TempDir()
+	dir := tmpDir(t)
+	defer os.RemoveAll(dir)
 	hello := filepath.Join(dir, "hello.go")
 	prog := `
 		package main
@@ -195,7 +209,8 @@ func TestLargeDefs(t *testing.T) {
 	}
 	testenv.MustHaveGoBuild(t)
 
-	dir := t.TempDir()
+	dir := tmpDir(t)
+	defer os.RemoveAll(dir)
 	large := filepath.Join(dir, "large.go")
 	f, err := os.Create(large)
 	if err != nil {
@@ -261,7 +276,8 @@ func TestLargeDefs(t *testing.T) {
 func TestIssue21703(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 
-	dir := t.TempDir()
+	dir := tmpDir(t)
+	defer os.RemoveAll(dir)
 
 	const aSrc = `package a; const X = "\n!\n"`
 	err := os.WriteFile(filepath.Join(dir, "a.go"), []byte(aSrc), 0666)
@@ -291,7 +307,8 @@ func TestIssue21703(t *testing.T) {
 func TestCreateWithCompilerObj(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 
-	dir := t.TempDir()
+	dir := tmpDir(t)
+	defer os.RemoveAll(dir)
 	src := filepath.Join(dir, "p.go")
 	prog := "package p; var X = 42\n"
 	err := os.WriteFile(src, []byte(prog), 0666)
@@ -355,7 +372,8 @@ func TestCreateWithCompilerObj(t *testing.T) {
 func TestRWithNonexistentFile(t *testing.T) {
 	testenv.MustHaveGoBuild(t)
 
-	dir := t.TempDir()
+	dir := tmpDir(t)
+	defer os.RemoveAll(dir)
 	src := filepath.Join(dir, "p.go")
 	prog := "package p; var X = 42\n"
 	err := os.WriteFile(src, []byte(prog), 0666)

@@ -67,11 +67,6 @@ func lwp_self() int32
 
 func osyield()
 
-//go:nosplit
-func osyield_no_g() {
-	osyield()
-}
-
 func kqueue() int32
 
 //go:noescape
@@ -228,11 +223,7 @@ func newosproc(mp *m) {
 	}
 }
 
-// mstart is the entry-point for new Ms.
-// It is written in assembly, uses ABI0, is marked TOPFRAME, and calls netbsdMstart0.
-func netbsdMstart()
-
-// netbsdMStart0 is the function call that starts executing a newly
+// netbsdMStart is the function call that starts executing a newly
 // created thread. On NetBSD, a new thread inherits the signal stack
 // of the creating thread. That confuses minit, so we remove that
 // signal stack here before calling the regular mstart. It's a bit
@@ -240,10 +231,10 @@ func netbsdMstart()
 // it's a simple change that keeps NetBSD working like other OS's.
 // At this point all signals are blocked, so there is no race.
 //go:nosplit
-func netbsdMstart0() {
+func netbsdMstart() {
 	st := stackt{ss_flags: _SS_DISABLE}
 	sigaltstack(&st, nil)
-	mstart0()
+	mstart()
 }
 
 func osinit() {

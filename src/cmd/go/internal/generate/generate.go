@@ -161,6 +161,8 @@ func init() {
 }
 
 func runGenerate(ctx context.Context, cmd *base.Command, args []string) {
+	load.IgnoreImports = true
+
 	if generateRunFlag != "" {
 		var err error
 		generateRunRE, err = regexp.Compile(generateRunFlag)
@@ -173,8 +175,7 @@ func runGenerate(ctx context.Context, cmd *base.Command, args []string) {
 
 	// Even if the arguments are .go files, this loop suffices.
 	printed := false
-	pkgOpts := load.PackageOpts{IgnoreImports: true}
-	for _, pkg := range load.PackagesAndErrors(ctx, pkgOpts, args) {
+	for _, pkg := range load.PackagesAndErrors(ctx, args) {
 		if modload.Enabled() && pkg.Module != nil && !pkg.Module.Main {
 			if !printed {
 				fmt.Fprintf(os.Stderr, "go: not generating in packages in dependency modules\n")
@@ -333,7 +334,6 @@ func (g *Generator) setEnv() {
 		"GOPACKAGE=" + g.pkg,
 		"DOLLAR=" + "$",
 	}
-	g.env = base.AppendPWD(g.env, g.dir)
 }
 
 // split breaks the line into words, evaluating quoted

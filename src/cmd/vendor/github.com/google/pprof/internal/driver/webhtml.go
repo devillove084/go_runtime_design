@@ -62,7 +62,6 @@ a {
 .header .title h1 {
   font-size: 1.75em;
   margin-right: 1rem;
-  margin-bottom: 4px;
 }
 .header .title a {
   color: #212121;

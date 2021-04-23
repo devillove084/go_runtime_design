@@ -626,15 +626,12 @@ func TestTransportMaxConnsPerHost(t *testing.T) {
 			t.Fatalf("ExportHttp2ConfigureTransport: %v", err)
 		}
 
-		mu := sync.Mutex{}
-		var conns []net.Conn
+		connCh := make(chan net.Conn, 1)
 		var dialCnt, gotConnCnt, tlsHandshakeCnt int32
 		tr.Dial = func(network, addr string) (net.Conn, error) {
 			atomic.AddInt32(&dialCnt, 1)
 			c, err := net.Dial(network, addr)
-			mu.Lock()
-			defer mu.Unlock()
-			conns = append(conns, c)
+			connCh <- c
 			return c, err
 		}
 
@@ -688,12 +685,7 @@ func TestTransportMaxConnsPerHost(t *testing.T) {
 			t.FailNow()
 		}
 
-		mu.Lock()
-		for _, c := range conns {
-			c.Close()
-		}
-		conns = nil
-		mu.Unlock()
+		(<-connCh).Close()
 		tr.CloseIdleConnections()
 
 		doReq()
@@ -3742,7 +3734,7 @@ func TestTransportDialTLSContext(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		return c, c.HandshakeContext(ctx)
+		return c, c.Handshake()
 	}
 
 	req, err := NewRequest("GET", ts.URL, nil)

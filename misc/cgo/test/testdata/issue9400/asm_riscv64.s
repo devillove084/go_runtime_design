@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // +build riscv64
-// +build gc
+// +build !gccgo
 
 #include "textflag.h"
 

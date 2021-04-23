@@ -30,7 +30,7 @@ func TestMatch(t *testing.T) {
 	match := func(tag string, want map[string]bool) {
 		t.Helper()
 		m := make(map[string]bool)
-		if !ctxt.matchAuto(tag, m) {
+		if !ctxt.match(tag, m) {
 			t.Errorf("%s context should match %s, does not", what, tag)
 		}
 		if !reflect.DeepEqual(m, want) {
@@ -40,7 +40,7 @@ func TestMatch(t *testing.T) {
 	nomatch := func(tag string, want map[string]bool) {
 		t.Helper()
 		m := make(map[string]bool)
-		if ctxt.matchAuto(tag, m) {
+		if ctxt.match(tag, m) {
 			t.Errorf("%s context should NOT match %s, does", what, tag)
 		}
 		if !reflect.DeepEqual(m, want) {
@@ -154,13 +154,6 @@ var shouldBuildTests = []struct {
 		shouldBuild: true,
 	},
 	{
-		name: "Yes2",
-		content: "//go:build yes\n" +
-			"package main\n",
-		tags:        map[string]bool{"yes": true},
-		shouldBuild: true,
-	},
-	{
 		name: "Or",
 		content: "// +build no yes\n\n" +
 			"package main\n",
@@ -168,22 +161,8 @@ var shouldBuildTests = []struct {
 		shouldBuild: true,
 	},
 	{
-		name: "Or2",
-		content: "//go:build no || yes\n" +
-			"package main\n",
-		tags:        map[string]bool{"yes": true, "no": true},
-		shouldBuild: true,
-	},
-	{
 		name: "And",
 		content: "// +build no,yes\n\n" +
-			"package main\n",
-		tags:        map[string]bool{"yes": true, "no": true},
-		shouldBuild: false,
-	},
-	{
-		name: "And2",
-		content: "//go:build no && yes\n" +
 			"package main\n",
 		tags:        map[string]bool{"yes": true, "no": true},
 		shouldBuild: false,
@@ -199,22 +178,11 @@ var shouldBuildTests = []struct {
 		shouldBuild: false,
 	},
 	{
-		name: "Cgo2",
-		content: "//go:build cgo\n" +
-			"// Copyright The Go Authors.\n\n" +
-			"// This package implements parsing of tags like\n" +
-			"// +build tag1\n" +
-			"package build",
-		tags:        map[string]bool{"cgo": true},
-		shouldBuild: false,
-	},
-	{
 		name: "AfterPackage",
 		content: "// Copyright The Go Authors.\n\n" +
 			"package build\n\n" +
 			"// shouldBuild checks tags given by lines of the form\n" +
 			"// +build tag\n" +
-			"//go:build tag\n" +
 			"func shouldBuild(content []byte)\n",
 		tags:        map[string]bool{},
 		shouldBuild: true,
@@ -227,25 +195,11 @@ var shouldBuildTests = []struct {
 		shouldBuild: true,
 	},
 	{
-		name: "TooClose2",
-		content: "//go:build yes\n" +
-			"package main\n",
-		tags:        map[string]bool{"yes": true},
-		shouldBuild: true,
-	},
-	{
 		name: "TooCloseNo",
 		content: "// +build no\n" +
 			"package main\n",
 		tags:        map[string]bool{},
 		shouldBuild: true,
-	},
-	{
-		name: "TooCloseNo2",
-		content: "//go:build no\n" +
-			"package main\n",
-		tags:        map[string]bool{"no": true},
-		shouldBuild: false,
 	},
 	{
 		name: "BinaryOnly",
@@ -257,21 +211,20 @@ var shouldBuildTests = []struct {
 		shouldBuild: true,
 	},
 	{
-		name: "BinaryOnly2",
-		content: "//go:binary-only-package\n" +
-			"//go:build no\n" +
-			"package main\n",
-		tags:        map[string]bool{"no": true},
-		binaryOnly:  true,
-		shouldBuild: false,
-	},
-	{
 		name: "ValidGoBuild",
 		content: "// +build yes\n\n" +
 			"//go:build no\n" +
 			"package main\n",
-		tags:        map[string]bool{"no": true},
+		tags:        map[string]bool{"yes": true},
+		shouldBuild: true,
+	},
+	{
+		name: "MissingBuild",
+		content: "//go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
 		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
 	},
 	{
 		name: "MissingBuild2",
@@ -279,8 +232,20 @@ var shouldBuildTests = []struct {
 			"// +build yes\n\n" +
 			"//go:build no\n" +
 			"package main\n",
-		tags:        map[string]bool{"no": true},
+		tags:        map[string]bool{},
 		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
+	},
+	{
+		name: "MissingBuild2",
+		content: "/*\n" +
+			"// +build yes\n\n" +
+			"*/\n" +
+			"//go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
 	},
 	{
 		name: "Comment1",
@@ -298,8 +263,9 @@ var shouldBuildTests = []struct {
 			"*/\n\n" +
 			"//go:build no\n" +
 			"package main\n",
-		tags:        map[string]bool{"no": true},
+		tags:        map[string]bool{},
 		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
 	},
 	{
 		name: "Comment3",
@@ -308,8 +274,9 @@ var shouldBuildTests = []struct {
 			"*/\n\n" +
 			"//go:build no\n" +
 			"package main\n",
-		tags:        map[string]bool{"no": true},
+		tags:        map[string]bool{},
 		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
 	},
 	{
 		name: "Comment4",
@@ -323,8 +290,9 @@ var shouldBuildTests = []struct {
 		content: "/**/\n" +
 			"//go:build no\n" +
 			"package main\n",
-		tags:        map[string]bool{"no": true},
+		tags:        map[string]bool{},
 		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
 	},
 }
 
@@ -486,7 +454,11 @@ func TestImportDirNotExist(t *testing.T) {
 	testenv.MustHaveGoBuild(t) // really must just have source
 	ctxt := Default
 
-	emptyDir := t.TempDir()
+	emptyDir, err := os.MkdirTemp("", t.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(emptyDir)
 
 	ctxt.GOPATH = emptyDir
 	ctxt.Dir = emptyDir
@@ -539,7 +511,8 @@ func TestImportDirNotExist(t *testing.T) {
 func TestImportVendor(t *testing.T) {
 	testenv.MustHaveGoBuild(t) // really must just have source
 
-	t.Setenv("GO111MODULE", "off")
+	defer os.Setenv("GO111MODULE", os.Getenv("GO111MODULE"))
+	os.Setenv("GO111MODULE", "off")
 
 	ctxt := Default
 	wd, err := os.Getwd()
@@ -560,7 +533,8 @@ func TestImportVendor(t *testing.T) {
 func TestImportVendorFailure(t *testing.T) {
 	testenv.MustHaveGoBuild(t) // really must just have source
 
-	t.Setenv("GO111MODULE", "off")
+	defer os.Setenv("GO111MODULE", os.Getenv("GO111MODULE"))
+	os.Setenv("GO111MODULE", "off")
 
 	ctxt := Default
 	wd, err := os.Getwd()
@@ -582,7 +556,8 @@ func TestImportVendorFailure(t *testing.T) {
 func TestImportVendorParentFailure(t *testing.T) {
 	testenv.MustHaveGoBuild(t) // really must just have source
 
-	t.Setenv("GO111MODULE", "off")
+	defer os.Setenv("GO111MODULE", os.Getenv("GO111MODULE"))
+	os.Setenv("GO111MODULE", "off")
 
 	ctxt := Default
 	wd, err := os.Getwd()
@@ -612,11 +587,16 @@ func TestImportPackageOutsideModule(t *testing.T) {
 
 	// Disable module fetching for this test so that 'go list' fails quickly
 	// without trying to find the latest version of a module.
-	t.Setenv("GOPROXY", "off")
+	defer os.Setenv("GOPROXY", os.Getenv("GOPROXY"))
+	os.Setenv("GOPROXY", "off")
 
 	// Create a GOPATH in a temporary directory. We don't use testdata
 	// because it's in GOROOT, which interferes with the module heuristic.
-	gopath := t.TempDir()
+	gopath, err := os.MkdirTemp("", "gobuild-notmodule")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(gopath)
 	if err := os.MkdirAll(filepath.Join(gopath, "src/example.com/p"), 0777); err != nil {
 		t.Fatal(err)
 	}
@@ -624,8 +604,10 @@ func TestImportPackageOutsideModule(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Setenv("GO111MODULE", "on")
-	t.Setenv("GOPATH", gopath)
+	defer os.Setenv("GO111MODULE", os.Getenv("GO111MODULE"))
+	os.Setenv("GO111MODULE", "on")
+	defer os.Setenv("GOPATH", os.Getenv("GOPATH"))
+	os.Setenv("GOPATH", gopath)
 	ctxt := Default
 	ctxt.GOPATH = gopath
 	ctxt.Dir = filepath.Join(gopath, "src/example.com/p")
@@ -674,19 +656,26 @@ func TestIssue23594(t *testing.T) {
 // Verifies golang.org/issue/34752.
 func TestMissingImportErrorRepetition(t *testing.T) {
 	testenv.MustHaveGoBuild(t) // need 'go list' internally
-	tmp := t.TempDir()
+	tmp, err := os.MkdirTemp("", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmp)
 	if err := os.WriteFile(filepath.Join(tmp, "go.mod"), []byte("module m"), 0666); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GO111MODULE", "on")
-	t.Setenv("GOPROXY", "off")
-	t.Setenv("GONOPROXY", "none")
+	defer os.Setenv("GO111MODULE", os.Getenv("GO111MODULE"))
+	os.Setenv("GO111MODULE", "on")
+	defer os.Setenv("GOPROXY", os.Getenv("GOPROXY"))
+	os.Setenv("GOPROXY", "off")
+	defer os.Setenv("GONOPROXY", os.Getenv("GONOPROXY"))
+	os.Setenv("GONOPROXY", "none")
 
 	ctxt := Default
 	ctxt.Dir = tmp
 
 	pkgPath := "example.com/hello"
-	_, err := ctxt.Import(pkgPath, tmp, FindOnly)
+	_, err = ctxt.Import(pkgPath, tmp, FindOnly)
 	if err == nil {
 		t.Fatal("unexpected success")
 	}

@@ -262,7 +262,7 @@ func (t *_type) textOff(off textOff) unsafe.Pointer {
 	if off == -1 {
 		// -1 is the sentinel value for unreachable code.
 		// See cmd/link/internal/ld/data.go:relocsym.
-		return unsafe.Pointer(funcPC(unreachableMethod))
+		return unsafe.Pointer(^uintptr(0))
 	}
 	base := uintptr(unsafe.Pointer(t))
 	var md *moduledata
@@ -383,7 +383,7 @@ type maptype struct {
 }
 
 // Note: flag values must match those used in the TMAP case
-// in ../cmd/compile/internal/gc/reflect.go:writeType.
+// in ../cmd/compile/internal/gc/reflect.go:dtypesym.
 func (mt *maptype) indirectkey() bool { // store ptr to key instead of key itself
 	return mt.flags&1 != 0
 }

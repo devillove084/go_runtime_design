@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"cmd/internal/objabi"
 	"fmt"
-	"internal/buildcfg"
 	"io"
 	"strings"
 )
@@ -84,7 +83,7 @@ func CConv(s uint8) string {
 	}
 	for i := range opSuffixSpace {
 		sset := &opSuffixSpace[i]
-		if sset.arch == buildcfg.GOARCH {
+		if sset.arch == objabi.GOARCH {
 			return sset.cconv(s)
 		}
 	}
@@ -188,7 +187,7 @@ func (p *Prog) WriteInstructionString(w io.Writer) {
 		// In short, print one of these two:
 		// TEXT	foo(SB), DUPOK|NOSPLIT, $0
 		// TEXT	foo(SB), $0
-		s := p.From.Sym.TextAttrString()
+		s := p.From.Sym.Attribute.TextAttrString()
 		if s != "" {
 			fmt.Fprintf(w, "%s%s", sep, s)
 			sep = ", "
@@ -331,7 +330,7 @@ func writeDconv(w io.Writer, p *Prog, a *Addr, abiDetail bool) {
 	case TYPE_SHIFT:
 		v := int(a.Offset)
 		ops := "<<>>->@>"
-		switch buildcfg.GOARCH {
+		switch objabi.GOARCH {
 		case "arm":
 			op := ops[((v>>5)&3)<<1:]
 			if v&(1<<4) != 0 {
@@ -347,7 +346,7 @@ func writeDconv(w io.Writer, p *Prog, a *Addr, abiDetail bool) {
 			r := (v >> 16) & 31
 			fmt.Fprintf(w, "%s%c%c%d", Rconv(r+RBaseARM64), op[0], op[1], (v>>10)&63)
 		default:
-			panic("TYPE_SHIFT is not supported on " + buildcfg.GOARCH)
+			panic("TYPE_SHIFT is not supported on " + objabi.GOARCH)
 		}
 
 	case TYPE_REGREG:

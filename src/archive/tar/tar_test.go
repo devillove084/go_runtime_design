@@ -262,11 +262,16 @@ func TestFileInfoHeaderDir(t *testing.T) {
 func TestFileInfoHeaderSymlink(t *testing.T) {
 	testenv.MustHaveSymlink(t)
 
-	tmpdir := t.TempDir()
+	tmpdir, err := os.MkdirTemp("", "TestFileInfoHeaderSymlink")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
 
 	link := filepath.Join(tmpdir, "link")
 	target := tmpdir
-	if err := os.Symlink(target, link); err != nil {
+	err = os.Symlink(target, link)
+	if err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Lstat(link)

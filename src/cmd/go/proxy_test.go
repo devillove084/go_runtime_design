@@ -23,6 +23,7 @@ import (
 	"sync"
 	"testing"
 
+	"cmd/go/internal/modfetch"
 	"cmd/go/internal/modfetch/codehost"
 	"cmd/go/internal/par"
 	"cmd/go/internal/txtar"
@@ -228,7 +229,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 			if m.Path != modPath {
 				continue
 			}
-			if module.IsPseudoVersion(m.Version) && (latestPseudo == "" || semver.Compare(latestPseudo, m.Version) > 0) {
+			if modfetch.IsPseudoVersion(m.Version) && (latestPseudo == "" || semver.Compare(latestPseudo, m.Version) > 0) {
 				latestPseudo = m.Version
 			} else if semver.Prerelease(m.Version) != "" && (latestPrerelease == "" || semver.Compare(latestPrerelease, m.Version) > 0) {
 				latestPrerelease = m.Version
@@ -281,7 +282,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			found = true
-			if !module.IsPseudoVersion(m.Version) {
+			if !modfetch.IsPseudoVersion(m.Version) {
 				if err := module.Check(m.Path, m.Version); err == nil {
 					fmt.Fprintf(w, "%s\n", m.Version)
 				}
@@ -314,7 +315,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 		for _, m := range modList {
 			if m.Path == path && semver.Compare(best, m.Version) < 0 {
 				var hash string
-				if module.IsPseudoVersion(m.Version) {
+				if modfetch.IsPseudoVersion(m.Version) {
 					hash = m.Version[strings.LastIndex(m.Version, "-")+1:]
 				} else {
 					hash = findHash(m)
@@ -361,7 +362,7 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 			var buf bytes.Buffer
 			z := zip.NewWriter(&buf)
 			for _, f := range a.Files {
-				if f.Name == ".info" || f.Name == ".mod" || f.Name == ".zip" {
+				if strings.HasPrefix(f.Name, ".") {
 					continue
 				}
 				var zipName string

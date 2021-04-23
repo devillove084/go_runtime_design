@@ -307,7 +307,7 @@ func InitSmallSliceLiteral() []int {
 }
 
 func InitNotSmallSliceLiteral() []int {
-	// amd64:`LEAQ\t.*stmp_`
+	// amd64:`MOVQ\t.*autotmp_`
 	return []int{
 		42,
 		42,

@@ -353,7 +353,11 @@ func testDWARF(t *testing.T, linktype int) {
 	}
 	testenv.MustHaveGoRun(t)
 
-	tmpdir := t.TempDir()
+	tmpdir, err := os.MkdirTemp("", "TestDWARF")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
 
 	src := filepath.Join(tmpdir, "a.go")
 	file, err := os.Create(src)
@@ -468,7 +472,11 @@ func TestBSSHasZeros(t *testing.T) {
 		t.Skip("skipping test: gcc is missing")
 	}
 
-	tmpdir := t.TempDir()
+	tmpdir, err := os.MkdirTemp("", "TestBSSHasZeros")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
 
 	srcpath := filepath.Join(tmpdir, "a.c")
 	src := `
@@ -588,10 +596,15 @@ func TestBuildingWindowsGUI(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("skipping windows only test")
 	}
-	tmpdir := t.TempDir()
+	tmpdir, err := os.MkdirTemp("", "TestBuildingWindowsGUI")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpdir)
 
 	src := filepath.Join(tmpdir, "a.go")
-	if err := os.WriteFile(src, []byte(`package main; func main() {}`), 0644); err != nil {
+	err = os.WriteFile(src, []byte(`package main; func main() {}`), 0644)
+	if err != nil {
 		t.Fatal(err)
 	}
 	exe := filepath.Join(tmpdir, "a.exe")

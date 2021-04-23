@@ -65,7 +65,6 @@ func runVendor(ctx context.Context, cmd *base.Command, args []string) {
 
 	loadOpts := modload.PackageOpts{
 		Tags:                     imports.AnyTags(),
-		VendorModulesInGOROOTSrc: true,
 		ResolveMissingImports:    true,
 		UseVendorAll:             true,
 		AllowErrors:              vendorE,

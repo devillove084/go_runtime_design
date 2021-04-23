@@ -508,33 +508,31 @@ func UnquoteUsage(flag *Flag) (name string, usage string) {
 // documentation for the global function PrintDefaults for more information.
 func (f *FlagSet) PrintDefaults() {
 	f.VisitAll(func(flag *Flag) {
-		var b strings.Builder
-		fmt.Fprintf(&b, "  -%s", flag.Name) // Two spaces before -; see next two comments.
+		s := fmt.Sprintf("  -%s", flag.Name) // Two spaces before -; see next two comments.
 		name, usage := UnquoteUsage(flag)
 		if len(name) > 0 {
-			b.WriteString(" ")
-			b.WriteString(name)
+			s += " " + name
 		}
 		// Boolean flags of one ASCII letter are so common we
 		// treat them specially, putting their usage on the same line.
-		if b.Len() <= 4 { // space, space, '-', 'x'.
-			b.WriteString("\t")
+		if len(s) <= 4 { // space, space, '-', 'x'.
+			s += "\t"
 		} else {
 			// Four spaces before the tab triggers good alignment
 			// for both 4- and 8-space tab stops.
-			b.WriteString("\n    \t")
+			s += "\n    \t"
 		}
-		b.WriteString(strings.ReplaceAll(usage, "\n", "\n    \t"))
+		s += strings.ReplaceAll(usage, "\n", "\n    \t")
 
 		if !isZeroValue(flag, flag.DefValue) {
 			if _, ok := flag.Value.(*stringValue); ok {
 				// put quotes on the value
-				fmt.Fprintf(&b, " (default %q)", flag.DefValue)
+				s += fmt.Sprintf(" (default %q)", flag.DefValue)
 			} else {
-				fmt.Fprintf(&b, " (default %v)", flag.DefValue)
+				s += fmt.Sprintf(" (default %v)", flag.DefValue)
 			}
 		}
-		fmt.Fprint(f.Output(), b.String(), "\n")
+		fmt.Fprint(f.Output(), s, "\n")
 	})
 }
 
@@ -859,23 +857,17 @@ func Func(name, usage string, fn func(string) error) {
 // of strings by giving the slice the methods of Value; in particular, Set would
 // decompose the comma-separated string into the slice.
 func (f *FlagSet) Var(value Value, name string, usage string) {
-	// Flag must not begin "-" or contain "=".
-	if strings.HasPrefix(name, "-") {
-		panic(f.sprintf("flag %q begins with -", name))
-	} else if strings.Contains(name, "=") {
-		panic(f.sprintf("flag %q contains =", name))
-	}
-
 	// Remember the default value as a string; it won't change.
 	flag := &Flag{name, usage, value, value.String()}
 	_, alreadythere := f.formal[name]
 	if alreadythere {
 		var msg string
 		if f.name == "" {
-			msg = f.sprintf("flag redefined: %s", name)
+			msg = fmt.Sprintf("flag redefined: %s", name)
 		} else {
-			msg = f.sprintf("%s flag redefined: %s", f.name, name)
+			msg = fmt.Sprintf("%s flag redefined: %s", f.name, name)
 		}
+		fmt.Fprintln(f.Output(), msg)
 		panic(msg) // Happens only if flags are declared with identical names
 	}
 	if f.formal == nil {
@@ -894,19 +886,13 @@ func Var(value Value, name string, usage string) {
 	CommandLine.Var(value, name, usage)
 }
 
-// sprintf formats the message, prints it to output, and returns it.
-func (f *FlagSet) sprintf(format string, a ...interface{}) string {
-	msg := fmt.Sprintf(format, a...)
-	fmt.Fprintln(f.Output(), msg)
-	return msg
-}
-
 // failf prints to standard error a formatted error and usage message and
 // returns the error.
 func (f *FlagSet) failf(format string, a ...interface{}) error {
-	msg := f.sprintf(format, a...)
+	err := fmt.Errorf(format, a...)
+	fmt.Fprintln(f.Output(), err)
 	f.usage()
-	return errors.New(msg)
+	return err
 }
 
 // usage calls the Usage method for the flag set if one is specified,

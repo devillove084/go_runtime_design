@@ -6,6 +6,7 @@ package fs_test
 
 import (
 	. "io/fs"
+	"io/ioutil"
 	"os"
 	pathpkg "path"
 	"testing"
@@ -95,7 +96,11 @@ func mark(entry DirEntry, err error, errors *[]error, clear bool) error {
 }
 
 func TestWalkDir(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmpDir, err := ioutil.TempDir("", "TestWalk")
+	if err != nil {
+		t.Fatal("creating temp dir:", err)
+	}
+	defer os.RemoveAll(tmpDir)
 
 	origDir, err := os.Getwd()
 	if err != nil {

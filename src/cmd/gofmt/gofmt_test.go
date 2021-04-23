@@ -49,12 +49,11 @@ func gofmtFlags(filename string, maxLines int) string {
 		case scanner.EOF:
 			return ""
 		}
+
 	}
 
 	return ""
 }
-
-var typeParamsEnabled = false
 
 func runTest(t *testing.T, in, out string) {
 	// process flags
@@ -78,11 +77,6 @@ func runTest(t *testing.T, in, out string) {
 		case "-stdin":
 			// fake flag - pretend input is from stdin
 			stdin = true
-		case "-G":
-			// fake flag - test is for generic code
-			if !typeParamsEnabled {
-				return
-			}
 		default:
 			t.Errorf("unrecognized flag name: %s", name)
 		}

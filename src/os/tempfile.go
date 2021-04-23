@@ -4,10 +4,7 @@
 
 package os
 
-import (
-	"errors"
-	"internal/itoa"
-)
+import "errors"
 
 // fastrand provided by runtime.
 // We generate random temporary file names so that there's a good
@@ -16,7 +13,7 @@ import (
 func fastrand() uint32
 
 func nextRandom() string {
-	return itoa.Uitoa(uint(fastrand()))
+	return uitoa(uint(fastrand()))
 }
 
 // CreateTemp creates a new temporary file in the directory dir,

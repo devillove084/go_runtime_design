@@ -6,7 +6,6 @@ package net
 
 import (
 	"context"
-	"internal/itoa"
 	"syscall"
 )
 
@@ -35,9 +34,9 @@ func (a *UDPAddr) String() string {
 	}
 	ip := ipEmptyString(a.IP)
 	if a.Zone != "" {
-		return JoinHostPort(ip+"%"+a.Zone, itoa.Itoa(a.Port))
+		return JoinHostPort(ip+"%"+a.Zone, itoa(a.Port))
 	}
-	return JoinHostPort(ip, itoa.Itoa(a.Port))
+	return JoinHostPort(ip, itoa(a.Port))
 }
 
 func (a *UDPAddr) isWildcard() bool {
@@ -100,20 +99,11 @@ func (c *UDPConn) SyscallConn() (syscall.RawConn, error) {
 }
 
 // ReadFromUDP acts like ReadFrom but returns a UDPAddr.
-func (c *UDPConn) ReadFromUDP(b []byte) (n int, addr *UDPAddr, err error) {
-	// This function is designed to allow the caller to control the lifetime
-	// of the returned *UDPAddr and thereby prevent an allocation.
-	// See https://blog.filippo.io/efficient-go-apis-with-the-inliner/.
-	// The real work is done by readFromUDP, below.
-	return c.readFromUDP(b, &UDPAddr{})
-}
-
-// readFromUDP implements ReadFromUDP.
-func (c *UDPConn) readFromUDP(b []byte, addr *UDPAddr) (int, *UDPAddr, error) {
+func (c *UDPConn) ReadFromUDP(b []byte) (int, *UDPAddr, error) {
 	if !c.ok() {
 		return 0, nil, syscall.EINVAL
 	}
-	n, addr, err := c.readFrom(b, addr)
+	n, addr, err := c.readFrom(b)
 	if err != nil {
 		err = &OpError{Op: "read", Net: c.fd.net, Source: c.fd.laddr, Addr: c.fd.raddr, Err: err}
 	}
@@ -122,9 +112,14 @@ func (c *UDPConn) readFromUDP(b []byte, addr *UDPAddr) (int, *UDPAddr, error) {
 
 // ReadFrom implements the PacketConn ReadFrom method.
 func (c *UDPConn) ReadFrom(b []byte) (int, Addr, error) {
-	n, addr, err := c.readFromUDP(b, &UDPAddr{})
+	if !c.ok() {
+		return 0, nil, syscall.EINVAL
+	}
+	n, addr, err := c.readFrom(b)
+	if err != nil {
+		err = &OpError{Op: "read", Net: c.fd.net, Source: c.fd.laddr, Addr: c.fd.raddr, Err: err}
+	}
 	if addr == nil {
-		// Return Addr(nil), not Addr(*UDPConn(nil)).
 		return n, nil, err
 	}
 	return n, addr, err

@@ -8,7 +8,6 @@ package syscall
 
 import (
 	errorspkg "errors"
-	"internal/itoa"
 	"internal/oserror"
 	"internal/race"
 	"internal/unsafeheader"
@@ -133,7 +132,7 @@ func (e Errno) Error() string {
 	if err != nil {
 		n, err = formatMessage(flags, 0, uint32(e), 0, b, nil)
 		if err != nil {
-			return "winapi error #" + itoa.Itoa(int(e))
+			return "winapi error #" + itoa(int(e))
 		}
 	}
 	// trim terminating \r and \n
@@ -285,9 +284,6 @@ func NewCallbackCDecl(fn interface{}) uintptr {
 // This function returns 1 byte BOOLEAN rather than the 4 byte BOOL.
 //sys	CreateSymbolicLink(symlinkfilename *uint16, targetfilename *uint16, flags uint32) (err error) [failretval&0xff==0] = CreateSymbolicLinkW
 //sys	CreateHardLink(filename *uint16, existingfilename *uint16, reserved uintptr) (err error) [failretval&0xff==0] = CreateHardLinkW
-//sys	initializeProcThreadAttributeList(attrlist *_PROC_THREAD_ATTRIBUTE_LIST, attrcount uint32, flags uint32, size *uintptr) (err error) = InitializeProcThreadAttributeList
-//sys	deleteProcThreadAttributeList(attrlist *_PROC_THREAD_ATTRIBUTE_LIST) = DeleteProcThreadAttributeList
-//sys	updateProcThreadAttribute(attrlist *_PROC_THREAD_ATTRIBUTE_LIST, flags uint32, attr uintptr, value unsafe.Pointer, size uintptr, prevvalue unsafe.Pointer, returnedsize *uintptr) (err error) = UpdateProcThreadAttribute
 
 // syscall interface implementation for other packages
 
@@ -418,22 +414,19 @@ const ptrSize = unsafe.Sizeof(uintptr(0))
 // See https://msdn.microsoft.com/en-us/library/windows/desktop/aa365542(v=vs.85).aspx
 func setFilePointerEx(handle Handle, distToMove int64, newFilePointer *int64, whence uint32) error {
 	var e1 Errno
-	if unsafe.Sizeof(uintptr(0)) == 8 {
+	switch runtime.GOARCH {
+	default:
+		panic("unsupported architecture")
+	case "amd64":
 		_, _, e1 = Syscall6(procSetFilePointerEx.Addr(), 4, uintptr(handle), uintptr(distToMove), uintptr(unsafe.Pointer(newFilePointer)), uintptr(whence), 0, 0)
-	} else {
-		// Different 32-bit systems disgaree about whether distToMove starts 8-byte aligned.
-		switch runtime.GOARCH {
-		default:
-			panic("unsupported 32-bit architecture")
-		case "386":
-			// distToMove is a LARGE_INTEGER:
-			// https://msdn.microsoft.com/en-us/library/windows/desktop/aa383713(v=vs.85).aspx
-			_, _, e1 = Syscall6(procSetFilePointerEx.Addr(), 5, uintptr(handle), uintptr(distToMove), uintptr(distToMove>>32), uintptr(unsafe.Pointer(newFilePointer)), uintptr(whence), 0)
-		case "arm":
-			// distToMove must be 8-byte aligned per ARM calling convention
-			// https://msdn.microsoft.com/en-us/library/dn736986.aspx#Anchor_7
-			_, _, e1 = Syscall6(procSetFilePointerEx.Addr(), 6, uintptr(handle), 0, uintptr(distToMove), uintptr(distToMove>>32), uintptr(unsafe.Pointer(newFilePointer)), uintptr(whence))
-		}
+	case "386":
+		// distToMove is a LARGE_INTEGER:
+		// https://msdn.microsoft.com/en-us/library/windows/desktop/aa383713(v=vs.85).aspx
+		_, _, e1 = Syscall6(procSetFilePointerEx.Addr(), 5, uintptr(handle), uintptr(distToMove), uintptr(distToMove>>32), uintptr(unsafe.Pointer(newFilePointer)), uintptr(whence), 0)
+	case "arm":
+		// distToMove must be 8-byte aligned per ARM calling convention
+		// https://msdn.microsoft.com/en-us/library/dn736986.aspx#Anchor_7
+		_, _, e1 = Syscall6(procSetFilePointerEx.Addr(), 6, uintptr(handle), 0, uintptr(distToMove), uintptr(distToMove>>32), uintptr(unsafe.Pointer(newFilePointer)), uintptr(whence))
 	}
 	if e1 != 0 {
 		return errnoErr(e1)
@@ -1153,7 +1146,7 @@ func (s Signal) String() string {
 			return str
 		}
 	}
-	return "signal " + itoa.Itoa(int(s))
+	return "signal " + itoa(int(s))
 }
 
 func LoadCreateSymbolicLink() error {
@@ -1243,25 +1236,4 @@ func GetQueuedCompletionStatus(cphandle Handle, qty *uint32, key *uint32, overla
 // Deprecated: PostQueuedCompletionStatus has the wrong function signature. Use x/sys/windows.PostQueuedCompletionStatus.
 func PostQueuedCompletionStatus(cphandle Handle, qty uint32, key uint32, overlapped *Overlapped) error {
 	return postQueuedCompletionStatus(cphandle, qty, uintptr(key), overlapped)
-}
-
-// newProcThreadAttributeList allocates new PROC_THREAD_ATTRIBUTE_LIST, with
-// the requested maximum number of attributes, which must be cleaned up by
-// deleteProcThreadAttributeList.
-func newProcThreadAttributeList(maxAttrCount uint32) (*_PROC_THREAD_ATTRIBUTE_LIST, error) {
-	var size uintptr
-	err := initializeProcThreadAttributeList(nil, maxAttrCount, 0, &size)
-	if err != ERROR_INSUFFICIENT_BUFFER {
-		if err == nil {
-			return nil, errorspkg.New("unable to query buffer size from InitializeProcThreadAttributeList")
-		}
-		return nil, err
-	}
-	// size is guaranteed to be ≥1 by initializeProcThreadAttributeList.
-	al := (*_PROC_THREAD_ATTRIBUTE_LIST)(unsafe.Pointer(&make([]byte, size)[0]))
-	err = initializeProcThreadAttributeList(al, maxAttrCount, 0, &size)
-	if err != nil {
-		return nil, err
-	}
-	return al, nil
 }

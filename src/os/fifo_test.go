@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build darwin || dragonfly || freebsd || linux || netbsd || openbsd
 // +build darwin dragonfly freebsd linux netbsd openbsd
 
 package os_test
@@ -31,7 +30,12 @@ func TestFifoEOF(t *testing.T) {
 		t.Skip("skipping on OpenBSD; issue 25877")
 	}
 
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("", "TestFifoEOF")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
 	fifoName := filepath.Join(dir, "fifo")
 	if err := syscall.Mkfifo(fifoName, 0600); err != nil {
 		t.Fatal(err)

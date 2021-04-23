@@ -39,7 +39,11 @@ func TestRuntimeTypesPresent(t *testing.T) {
 		t.Skip("skipping on plan9; no DWARF symbol table in executables")
 	}
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "TestRuntimeTypesPresent")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 
 	f := gobuild(t, dir, `package main; func main() { }`, NoOpt)
 	defer f.Close()
@@ -167,7 +171,11 @@ func main() {
 		"main.Baz": {"Foo": true, "name": false},
 	}
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "TestEmbeddedStructMarker")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 
 	f := gobuild(t, dir, prog, NoOpt)
 
@@ -247,8 +255,11 @@ func main() {
 	y[0] = nil
 }
 `
-	dir := t.TempDir()
-
+	dir, err := ioutil.TempDir("", "TestSizes")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 	f := gobuild(t, dir, prog, NoOpt)
 	defer f.Close()
 	d, err := f.DWARF()
@@ -292,7 +303,11 @@ func main() {
 	c <- "foo"
 }
 `
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "TestFieldOverlap")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 
 	f := gobuild(t, dir, prog, NoOpt)
 	defer f.Close()
@@ -336,10 +351,13 @@ func varDeclCoordsAndSubrogramDeclFile(t *testing.T, testpoint string, expectFil
 
 	prog := fmt.Sprintf("package main\n%s\nfunc main() {\n\nvar i int\ni = i\n}\n", directive)
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", testpoint)
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 
 	f := gobuild(t, dir, prog, NoOpt)
-	defer f.Close()
 
 	d, err := f.DWARF()
 	if err != nil {
@@ -610,8 +628,8 @@ func TestInlinedRoutineRecords(t *testing.T) {
 	if runtime.GOOS == "plan9" {
 		t.Skip("skipping on plan9; no DWARF symbol table in executables")
 	}
-	if runtime.GOOS == "solaris" || runtime.GOOS == "illumos" {
-		t.Skip("skipping on solaris, illumos, pending resolution of issue #23168")
+	if runtime.GOOS == "solaris" || runtime.GOOS == "illumos" || runtime.GOOS == "darwin" {
+		t.Skip("skipping on solaris, illumos, and darwin, pending resolution of issue #23168")
 	}
 
 	t.Parallel()
@@ -635,7 +653,11 @@ func main() {
     G = x
 }
 `
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "TestInlinedRoutineRecords")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 
 	// Note: this is a build with "-l=4", as opposed to "-l -N". The
 	// test is intended to verify DWARF that is only generated when
@@ -643,7 +665,6 @@ func main() {
 	// main.main, however, hence we build with "-gcflags=-l=4" as opposed
 	// to "-gcflags=all=-l=4".
 	f := gobuild(t, dir, prog, OptInl4)
-	defer f.Close()
 
 	d, err := f.DWARF()
 	if err != nil {
@@ -767,11 +788,14 @@ func main() {
 func abstractOriginSanity(t *testing.T, pkgDir string, flags string) {
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "TestAbstractOriginSanity")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 
 	// Build with inlining, to exercise DWARF inlining support.
 	f := gobuildTestdata(t, dir, filepath.Join(pkgDir, "main"), flags)
-	defer f.Close()
 
 	d, err := f.DWARF()
 	if err != nil {
@@ -847,8 +871,8 @@ func TestAbstractOriginSanity(t *testing.T) {
 	if runtime.GOOS == "plan9" {
 		t.Skip("skipping on plan9; no DWARF symbol table in executables")
 	}
-	if runtime.GOOS == "solaris" || runtime.GOOS == "illumos" {
-		t.Skip("skipping on solaris, illumos, pending resolution of issue #23168")
+	if runtime.GOOS == "solaris" || runtime.GOOS == "illumos" || runtime.GOOS == "darwin" {
+		t.Skip("skipping on solaris, illumos, and darwin, pending resolution of issue #23168")
 	}
 
 	if wd, err := os.Getwd(); err == nil {
@@ -865,11 +889,11 @@ func TestAbstractOriginSanityIssue25459(t *testing.T) {
 	if runtime.GOOS == "plan9" {
 		t.Skip("skipping on plan9; no DWARF symbol table in executables")
 	}
-	if runtime.GOOS == "solaris" || runtime.GOOS == "illumos" {
-		t.Skip("skipping on solaris, illumos, pending resolution of issue #23168")
+	if runtime.GOOS == "solaris" || runtime.GOOS == "illumos" || runtime.GOOS == "darwin" {
+		t.Skip("skipping on solaris, illumos, and darwin, pending resolution of issue #23168")
 	}
-	if runtime.GOARCH != "amd64" && runtime.GOARCH != "386" {
-		t.Skip("skipping on not-amd64 not-386; location lists not supported")
+	if runtime.GOARCH != "amd64" && runtime.GOARCH != "x86" {
+		t.Skip("skipping on not-amd64 not-x86; location lists not supported")
 	}
 
 	if wd, err := os.Getwd(); err == nil {
@@ -886,8 +910,8 @@ func TestAbstractOriginSanityIssue26237(t *testing.T) {
 	if runtime.GOOS == "plan9" {
 		t.Skip("skipping on plan9; no DWARF symbol table in executables")
 	}
-	if runtime.GOOS == "solaris" || runtime.GOOS == "illumos" {
-		t.Skip("skipping on solaris, illumos, pending resolution of issue #23168")
+	if runtime.GOOS == "solaris" || runtime.GOOS == "illumos" || runtime.GOOS == "darwin" {
+		t.Skip("skipping on solaris, illumos, and darwin, pending resolution of issue #23168")
 	}
 	if wd, err := os.Getwd(); err == nil {
 		gopathdir := filepath.Join(wd, "testdata", "issue26237")
@@ -949,11 +973,13 @@ func main() {
 	print(p)
 }
 `
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "TestRuntimeType")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 
 	f := gobuild(t, dir, prog, flags)
-	defer f.Close()
-
 	out, err := exec.Command(f.path).CombinedOutput()
 	if err != nil {
 		t.Fatalf("could not run test program: %v", err)
@@ -1017,7 +1043,11 @@ func TestIssue27614(t *testing.T) {
 
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "go-build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
 
 	const prog = `package main
 
@@ -1131,7 +1161,11 @@ func TestStaticTmp(t *testing.T) {
 
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "go-build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
 
 	const prog = `package main
 
@@ -1209,7 +1243,11 @@ func TestPackageNameAttr(t *testing.T) {
 
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "go-build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
 
 	const prog = "package main\nfunc main() {\nprintln(\"hello world\")\n}\n"
 
@@ -1269,10 +1307,14 @@ func TestMachoIssue32233(t *testing.T) {
 		t.Skip("skipping; test only interesting on darwin")
 	}
 
-	tmpdir := t.TempDir()
-
-	wd, err := os.Getwd()
+	tmpdir, err := ioutil.TempDir("", "TestMachoIssue32233")
 	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(tmpdir)
+
+	wd, err2 := os.Getwd()
+	if err2 != nil {
 		t.Fatalf("where am I? %v", err)
 	}
 	pdir := filepath.Join(wd, "testdata", "issue32233", "main")
@@ -1286,7 +1328,11 @@ func TestWindowsIssue36495(t *testing.T) {
 		t.Skip("skipping: test only on windows")
 	}
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "TestEmbeddedStructMarker")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 
 	prog := `
 package main
@@ -1297,12 +1343,10 @@ func main() {
   fmt.Println("Hello World")
 }`
 	f := gobuild(t, dir, prog, NoOpt)
-	defer f.Close()
 	exe, err := pe.Open(f.path)
 	if err != nil {
 		t.Fatalf("error opening pe file: %v", err)
 	}
-	defer exe.Close()
 	dw, err := exe.DWARF()
 	if err != nil {
 		t.Fatalf("error parsing DWARF: %v", err)
@@ -1353,14 +1397,17 @@ func TestIssue38192(t *testing.T) {
 
 	// Build a test program that contains a translation unit whose
 	// text (from am assembly source) contains only a single instruction.
-	tmpdir := t.TempDir()
+	tmpdir, err := ioutil.TempDir("", "TestIssue38192")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(tmpdir)
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("where am I? %v", err)
 	}
 	pdir := filepath.Join(wd, "testdata", "issue38192")
 	f := gobuildTestdata(t, tmpdir, pdir, DefaultOpt)
-	defer f.Close()
 
 	// Open the resulting binary and examine the DWARF it contains.
 	// Look for the function of interest ("main.singleInstruction")
@@ -1473,15 +1520,17 @@ func TestIssue39757(t *testing.T) {
 	// compiler/runtime in ways that aren't happening now, so this
 	// might be something to check for if it does start failing.
 
-	tmpdir := t.TempDir()
-
+	tmpdir, err := ioutil.TempDir("", "TestIssue38192")
+	if err != nil {
+		t.Fatalf("could not create directory: %v", err)
+	}
+	defer os.RemoveAll(tmpdir)
 	wd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("where am I? %v", err)
 	}
 	pdir := filepath.Join(wd, "testdata", "issue39757")
 	f := gobuildTestdata(t, tmpdir, pdir, DefaultOpt)
-	defer f.Close()
 
 	syms, err := f.Symbols()
 	if err != nil {
@@ -1569,75 +1618,4 @@ func TestIssue39757(t *testing.T) {
 			t.Logf("row %d: A=%x F=%s L=%d\n", i, r.Address, r.File.Name, r.Line)
 		}
 	}
-}
-
-func TestIssue42484(t *testing.T) {
-	testenv.MustHaveGoBuild(t)
-
-	if runtime.GOOS == "plan9" {
-		t.Skip("skipping on plan9; no DWARF symbol table in executables")
-	}
-
-	t.Parallel()
-
-	tmpdir, err := ioutil.TempDir("", "TestIssue42484")
-	if err != nil {
-		t.Fatalf("could not create directory: %v", err)
-	}
-	defer os.RemoveAll(tmpdir)
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("where am I? %v", err)
-	}
-	pdir := filepath.Join(wd, "testdata", "issue42484")
-	f := gobuildTestdata(t, tmpdir, pdir, NoOpt)
-
-	var lastAddr uint64
-	var lastFile string
-	var lastLine int
-
-	dw, err := f.DWARF()
-	if err != nil {
-		t.Fatalf("error parsing DWARF: %v", err)
-	}
-	rdr := dw.Reader()
-	for {
-		e, err := rdr.Next()
-		if err != nil {
-			t.Fatalf("error reading DWARF: %v", err)
-		}
-		if e == nil {
-			break
-		}
-		if e.Tag != dwarf.TagCompileUnit {
-			continue
-		}
-		lnrdr, err := dw.LineReader(e)
-		if err != nil {
-			t.Fatalf("error creating DWARF line reader: %v", err)
-		}
-		if lnrdr != nil {
-			var lne dwarf.LineEntry
-			for {
-				err := lnrdr.Next(&lne)
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					t.Fatalf("error reading next DWARF line: %v", err)
-				}
-				if lne.EndSequence {
-					continue
-				}
-				if lne.Address == lastAddr && (lne.File.Name != lastFile || lne.Line != lastLine) {
-					t.Errorf("address %#x is assigned to both %s:%d and %s:%d", lastAddr, lastFile, lastLine, lne.File.Name, lne.Line)
-				}
-				lastAddr = lne.Address
-				lastFile = lne.File.Name
-				lastLine = lne.Line
-			}
-		}
-		rdr.SkipChildren()
-	}
-	f.Close()
 }

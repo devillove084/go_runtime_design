@@ -20,7 +20,7 @@ func SendFile(dstFD *FD, src int, remain int64) (int64, error) {
 		return 0, err
 	}
 
-	dst := dstFD.Sysfd
+	dst := int(dstFD.Sysfd)
 	var written int64
 	var err error
 	for remain > 0 {

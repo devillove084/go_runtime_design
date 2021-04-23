@@ -12,12 +12,12 @@ const (
 	ok = byte(iota + 253)
 	bad
 	barn
-	bard // ERROR "constant 256 overflows byte|integer constant overflow|cannot convert"
+	bard // ERROR "constant 256 overflows byte|integer constant overflow"
 )
 
 const (
 	c = len([1 - iota]int{})
 	d
-	e // ERROR "array bound must be non-negative|negative array bound|invalid array length"
-	f // ERROR "array bound must be non-negative|negative array bound|invalid array length"
+	e // ERROR "array bound must be non-negative|negative array bound"
+	f // ERROR "array bound must be non-negative|negative array bound"
 )

@@ -148,7 +148,6 @@ The template function "context" returns the build context, defined as:
         UseAllFiles   bool     // use files regardless of +build lines, file names
         Compiler      string   // compiler to assume when computing target paths
         BuildTags     []string // build constraints to match in +build lines
-        ToolTags      []string // toolchain-specific build constraints
         ReleaseTags   []string // releases the current release is compatible with
         InstallSuffix string   // suffix to use in the name of the install dir
     }
@@ -336,10 +335,7 @@ var (
 var nl = []byte{'\n'}
 
 func runList(ctx context.Context, cmd *base.Command, args []string) {
-	if *listFmt != "" && *listJson == true {
-		base.Fatalf("go list -f cannot be used with -json")
-	}
-
+	load.ModResolveTests = *listTest
 	work.BuildInit()
 	out := newTrackingWriter(os.Stdout)
 	defer out.w.Flush()
@@ -348,7 +344,7 @@ func runList(ctx context.Context, cmd *base.Command, args []string) {
 		if *listM {
 			*listFmt = "{{.String}}"
 			if *listVersions {
-				*listFmt = `{{.Path}}{{range .Versions}} {{.}}{{end}}{{if .Deprecated}} (deprecated){{end}}`
+				*listFmt = `{{.Path}}{{range .Versions}} {{.}}{{end}}`
 			}
 		} else {
 			*listFmt = "{{.ImportPath}}"
@@ -427,7 +423,7 @@ func runList(ctx context.Context, cmd *base.Command, args []string) {
 			base.Fatalf("go list -m: not using modules")
 		}
 
-		modload.LoadModFile(ctx) // Sets cfg.BuildMod as a side-effect.
+		modload.LoadModFile(ctx) // Parses go.mod and sets cfg.BuildMod.
 		if cfg.BuildMod == "vendor" {
 			const actionDisabledFormat = "go list -m: can't %s using the vendor directory\n\t(Use -mod=mod or -mod=readonly to bypass.)"
 
@@ -451,28 +447,12 @@ func runList(ctx context.Context, cmd *base.Command, args []string) {
 			}
 		}
 
-		var mode modload.ListMode
-		if *listU {
-			mode |= modload.ListU | modload.ListRetracted | modload.ListDeprecated
-		}
-		if *listRetracted {
-			mode |= modload.ListRetracted
-		}
-		if *listVersions {
-			mode |= modload.ListVersions
-			if *listRetracted {
-				mode |= modload.ListRetractedVersions
-			}
-		}
-		mods, err := modload.ListModules(ctx, args, mode)
+		mods := modload.ListModules(ctx, args, *listU, *listVersions, *listRetracted)
 		if !*listE {
 			for _, m := range mods {
 				if m.Error != nil {
 					base.Errorf("go list -m: %v", m.Error.Err)
 				}
-			}
-			if err != nil {
-				base.Errorf("go list -m: %v", err)
 			}
 			base.ExitIfErrors()
 		}
@@ -498,11 +478,8 @@ func runList(ctx context.Context, cmd *base.Command, args []string) {
 		base.Fatalf("go list -test cannot be used with -find")
 	}
 
-	pkgOpts := load.PackageOpts{
-		IgnoreImports:   *listFind,
-		ModResolveTests: *listTest,
-	}
-	pkgs := load.PackagesAndErrors(ctx, pkgOpts, args)
+	load.IgnoreImports = *listFind
+	pkgs := load.PackagesAndErrors(ctx, args)
 	if !*listE {
 		w := 0
 		for _, pkg := range pkgs {
@@ -539,9 +516,9 @@ func runList(ctx context.Context, cmd *base.Command, args []string) {
 				var pmain, ptest, pxtest *load.Package
 				var err error
 				if *listE {
-					pmain, ptest, pxtest = load.TestPackagesAndErrors(ctx, pkgOpts, p, nil)
+					pmain, ptest, pxtest = load.TestPackagesAndErrors(ctx, p, nil)
 				} else {
-					pmain, ptest, pxtest, err = load.TestPackagesFor(ctx, pkgOpts, p, nil)
+					pmain, ptest, pxtest, err = load.TestPackagesFor(ctx, p, nil)
 					if err != nil {
 						base.Errorf("can't load test package: %s", err)
 					}
@@ -702,14 +679,9 @@ func runList(ctx context.Context, cmd *base.Command, args []string) {
 		}
 
 		if len(args) > 0 {
-			var mode modload.ListMode
-			if *listRetracted {
-				mode |= modload.ListRetracted
-			}
-			rmods, err := modload.ListModules(ctx, args, mode)
-			if err != nil && !*listE {
-				base.Errorf("go list -retracted: %v", err)
-			}
+			listU := false
+			listVersions := false
+			rmods := modload.ListModules(ctx, args, listU, listVersions, *listRetracted)
 			for i, arg := range args {
 				rmod := rmods[i]
 				for _, mod := range argToMods[arg] {

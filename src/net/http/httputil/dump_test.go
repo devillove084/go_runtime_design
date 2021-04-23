@@ -478,7 +478,7 @@ func TestDumpResponse(t *testing.T) {
 	}
 }
 
-// Issue 38352: Check for deadlock on canceled requests.
+// Issue 38352: Check for deadlock on cancelled requests.
 func TestDumpRequestOutIssue38352(t *testing.T) {
 	if testing.Short() {
 		return

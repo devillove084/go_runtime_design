@@ -627,7 +627,7 @@ func generateTrace(params *traceParams, consumer traceConsumer) error {
 			}
 		case trace.EvHeapAlloc:
 			ctx.heapStats.heapAlloc = ev.Args[0]
-		case trace.EvHeapGoal:
+		case trace.EvNextGC:
 			ctx.heapStats.nextGC = ev.Args[0]
 		}
 		if setGStateErr != nil {

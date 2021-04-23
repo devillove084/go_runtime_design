@@ -81,6 +81,8 @@ func (c *mcentral) cacheSpan() *mspan {
 	spanBytes := uintptr(class_to_allocnpages[c.spanclass.sizeclass()]) * _PageSize
 	deductSweepCredit(spanBytes, 0)
 
+	sg := mheap_.sweepgen
+
 	traceDone := false
 	if trace.enabled {
 		traceGCSweepStart()
@@ -102,8 +104,6 @@ func (c *mcentral) cacheSpan() *mspan {
 	spanBudget := 100
 
 	var s *mspan
-	sl := newSweepLocker()
-	sg := sl.sweepGen
 
 	// Try partial swept spans first.
 	if s = c.partialSwept(sg).pop(); s != nil {
@@ -116,10 +116,9 @@ func (c *mcentral) cacheSpan() *mspan {
 		if s == nil {
 			break
 		}
-		if s, ok := sl.tryAcquire(s); ok {
+		if atomic.Load(&s.sweepgen) == sg-2 && atomic.Cas(&s.sweepgen, sg-2, sg-1) {
 			// We got ownership of the span, so let's sweep it and use it.
 			s.sweep(true)
-			sl.dispose()
 			goto havespan
 		}
 		// We failed to get ownership of the span, which means it's being or
@@ -136,22 +135,20 @@ func (c *mcentral) cacheSpan() *mspan {
 		if s == nil {
 			break
 		}
-		if s, ok := sl.tryAcquire(s); ok {
+		if atomic.Load(&s.sweepgen) == sg-2 && atomic.Cas(&s.sweepgen, sg-2, sg-1) {
 			// We got ownership of the span, so let's sweep it.
 			s.sweep(true)
 			// Check if there's any free space.
 			freeIndex := s.nextFreeIndex()
 			if freeIndex != s.nelems {
 				s.freeindex = freeIndex
-				sl.dispose()
 				goto havespan
 			}
 			// Add it to the swept list, because sweeping didn't give us any free space.
-			c.fullSwept(sg).push(s.mspan)
+			c.fullSwept(sg).push(s)
 		}
 		// See comment for partial unswept spans.
 	}
-	sl.dispose()
 	if trace.enabled {
 		traceGCSweepDone()
 		traceDone = true
@@ -214,13 +211,7 @@ func (c *mcentral) uncacheSpan(s *mspan) {
 	if stale {
 		// It's stale, so just sweep it. Sweeping will put it on
 		// the right list.
-		//
-		// We don't use a sweepLocker here. Stale cached spans
-		// aren't in the global sweep lists, so mark termination
-		// itself holds up sweep completion until all mcaches
-		// have been swept.
-		ss := sweepLocked{s}
-		ss.sweep(false)
+		s.sweep(false)
 	} else {
 		if int(s.nelems)-int(s.allocCount) > 0 {
 			// Put it back on the partial swept list.
@@ -245,7 +236,7 @@ func (c *mcentral) grow() *mspan {
 
 	// Use division by multiplication and shifts to quickly compute:
 	// n := (npages << _PageShift) / size
-	n := s.divideByElemSize(npages << _PageShift)
+	n := (npages << _PageShift) >> s.divShift * uintptr(s.divMul) >> s.divShift2
 	s.limit = s.base() + size*n
 	heapBitsForAddr(s.base()).initSpan(s)
 	return s

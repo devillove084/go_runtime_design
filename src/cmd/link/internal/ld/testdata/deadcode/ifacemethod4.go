@@ -10,7 +10,6 @@ package main
 
 type T int
 
-//go:noinline
 func (T) M() {}
 
 type I interface{ M() }
@@ -21,5 +20,4 @@ var pp *I
 func main() {
 	p = new(T)  // use type T
 	pp = new(I) // use type I
-	*pp = *p    // convert T to I, build itab
 }

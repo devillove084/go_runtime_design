@@ -83,8 +83,7 @@ Flags:
 		Without this flag, the -o output is a combination of both
 		linker and compiler input.
 	-m
-		Print optimization decisions. Higher values or repetition
-		produce more detail.
+		Print optimization decisions.
 	-memprofile file
 		Write memory profile for the compilation to file.
 	-memprofilerate rate

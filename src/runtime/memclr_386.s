@@ -7,6 +7,8 @@
 #include "go_asm.h"
 #include "textflag.h"
 
+// NOTE: Windows externalthreadhandler expects memclr to preserve DX.
+
 // See memclrNoHeapPointers Go doc for important implementation constraints.
 
 // func memclrNoHeapPointers(ptr unsafe.Pointer, n uintptr)

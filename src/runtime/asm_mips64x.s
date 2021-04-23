@@ -11,7 +11,7 @@
 
 #define	REGCTXT	R22
 
-TEXT runtime·rt0_go(SB),NOSPLIT|TOPFRAME,$0
+TEXT runtime·rt0_go(SB),NOSPLIT,$0
 	// R29 = stack; R4 = argc; R5 = argv
 
 	ADDV	$-24, R29
@@ -85,24 +85,30 @@ TEXT runtime·breakpoint(SB),NOSPLIT|NOFRAME,$0-0
 TEXT runtime·asminit(SB),NOSPLIT|NOFRAME,$0-0
 	RET
 
-TEXT runtime·mstart(SB),NOSPLIT|TOPFRAME,$0
-	JAL	runtime·mstart0(SB)
-	RET // not reached
-
 /*
  *  go-routine
  */
 
+// void gosave(Gobuf*)
+// save state in Gobuf; setjmp
+TEXT runtime·gosave(SB), NOSPLIT|NOFRAME, $0-8
+	MOVV	buf+0(FP), R1
+	MOVV	R29, gobuf_sp(R1)
+	MOVV	R31, gobuf_pc(R1)
+	MOVV	g, gobuf_g(R1)
+	MOVV	R0, gobuf_lr(R1)
+	MOVV	R0, gobuf_ret(R1)
+	// Assert ctxt is zero. See func save.
+	MOVV	gobuf_ctxt(R1), R1
+	BEQ	R1, 2(PC)
+	JAL	runtime·badctxt(SB)
+	RET
+
 // void gogo(Gobuf*)
 // restore state from Gobuf; longjmp
-TEXT runtime·gogo(SB), NOSPLIT|NOFRAME, $0-8
+TEXT runtime·gogo(SB), NOSPLIT, $16-8
 	MOVV	buf+0(FP), R3
-	MOVV	gobuf_g(R3), R4
-	MOVV	0(R4), R0	// make sure g != nil
-	JMP	gogo<>(SB)
-
-TEXT gogo<>(SB), NOSPLIT|NOFRAME, $0
-	MOVV	R4, g
+	MOVV	gobuf_g(R3), g	// make sure g is not nil
 	JAL	runtime·save_g(SB)
 
 	MOVV	0(g), R2
@@ -126,6 +132,7 @@ TEXT runtime·mcall(SB), NOSPLIT|NOFRAME, $0-8
 	MOVV	R29, (g_sched+gobuf_sp)(g)
 	MOVV	R31, (g_sched+gobuf_pc)(g)
 	MOVV	R0, (g_sched+gobuf_lr)(g)
+	MOVV	g, (g_sched+gobuf_g)(g)
 
 	// Switch to m->g0 & its stack, call fn.
 	MOVV	g, R1
@@ -177,12 +184,21 @@ TEXT runtime·systemstack(SB), NOSPLIT, $0-8
 switch:
 	// save our state in g->sched. Pretend to
 	// be systemstack_switch if the G stack is scanned.
-	JAL	gosave_systemstack_switch<>(SB)
+	MOVV	$runtime·systemstack_switch(SB), R4
+	ADDV	$8, R4	// get past prologue
+	MOVV	R4, (g_sched+gobuf_pc)(g)
+	MOVV	R29, (g_sched+gobuf_sp)(g)
+	MOVV	R0, (g_sched+gobuf_lr)(g)
+	MOVV	g, (g_sched+gobuf_g)(g)
 
 	// switch to g0
 	MOVV	R3, g
 	JAL	runtime·save_g(SB)
 	MOVV	(g_sched+gobuf_sp)(g), R1
+	// make it look like mstart called systemstack on g0, to stop traceback
+	ADDV	$-8, R1
+	MOVV	$runtime·mstart(SB), R2
+	MOVV	R2, 0(R1)
 	MOVV	R1, R29
 
 	// call target function
@@ -263,7 +279,7 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT|NOFRAME,$0-0
 	JMP	runtime·morestack(SB)
 
 // reflectcall: call a function with the given argument list
-// func call(stackArgsType *_type, f *FuncVal, stackArgs *byte, stackArgsSize, stackRetOffset, frameSize uint32, regArgs *abi.RegArgs).
+// func call(argtype *_type, f *FuncVal, arg *byte, argsize, retoffset uint32).
 // we don't have variable-sized frames, so we use a small number
 // of constant-sized-frame functions to encode a few bits of size in the pc.
 // Caution: ugly multiline assembly macros in your future!
@@ -276,8 +292,8 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT|NOFRAME,$0-0
 	JMP	(R4)
 // Note: can't just "BR NAME(SB)" - bad inlining results.
 
-TEXT ·reflectcall(SB), NOSPLIT|NOFRAME, $0-48
-	MOVWU	frameSize+32(FP), R1
+TEXT ·reflectcall(SB), NOSPLIT|NOFRAME, $0-32
+	MOVWU argsize+24(FP), R1
 	DISPATCH(runtime·call16, 16)
 	DISPATCH(runtime·call32, 32)
 	DISPATCH(runtime·call64, 64)
@@ -309,11 +325,11 @@ TEXT ·reflectcall(SB), NOSPLIT|NOFRAME, $0-48
 	JMP	(R4)
 
 #define CALLFN(NAME,MAXSIZE)			\
-TEXT NAME(SB), WRAPPER, $MAXSIZE-48;		\
+TEXT NAME(SB), WRAPPER, $MAXSIZE-24;		\
 	NO_LOCAL_POINTERS;			\
 	/* copy arguments to stack */		\
-	MOVV	stackArgs+16(FP), R1;			\
-	MOVWU	stackArgsSize+24(FP), R2;			\
+	MOVV	arg+16(FP), R1;			\
+	MOVWU	argsize+24(FP), R2;			\
 	MOVV	R29, R3;				\
 	ADDV	$8, R3;			\
 	ADDV	R3, R2;				\
@@ -329,10 +345,10 @@ TEXT NAME(SB), WRAPPER, $MAXSIZE-48;		\
 	PCDATA  $PCDATA_StackMapIndex, $0;	\
 	JAL	(R4);				\
 	/* copy return values back */		\
-	MOVV	stackArgsType+0(FP), R5;		\
-	MOVV	stackArgs+16(FP), R1;			\
-	MOVWU	stackArgsSize+24(FP), R2;			\
-	MOVWU	stackRetOffset+28(FP), R4;		\
+	MOVV	argtype+0(FP), R5;		\
+	MOVV	arg+16(FP), R1;			\
+	MOVWU	n+24(FP), R2;			\
+	MOVWU	retoffset+28(FP), R4;		\
 	ADDV	$8, R29, R3;				\
 	ADDV	R4, R3; 			\
 	ADDV	R4, R1;				\
@@ -344,12 +360,11 @@ TEXT NAME(SB), WRAPPER, $MAXSIZE-48;		\
 // separate function so it can allocate stack space for the arguments
 // to reflectcallmove. It does not follow the Go ABI; it expects its
 // arguments in registers.
-TEXT callRet<>(SB), NOSPLIT, $40-0
+TEXT callRet<>(SB), NOSPLIT, $32-0
 	MOVV	R5, 8(R29)
 	MOVV	R1, 16(R29)
 	MOVV	R3, 24(R29)
 	MOVV	R2, 32(R29)
-	MOVV	$0, 40(R29)
 	JAL	runtime·reflectcallmove(SB)
 	RET
 
@@ -400,31 +415,16 @@ TEXT runtime·jmpdefer(SB), NOSPLIT|NOFRAME, $0-16
 	MOVV	0(REGCTXT), R4
 	JMP	(R4)
 
-// Save state of caller into g->sched,
-// but using fake PC from systemstack_switch.
-// Must only be called from functions with no locals ($0)
-// or else unwinding from systemstack_switch is incorrect.
-// Smashes R1.
-TEXT gosave_systemstack_switch<>(SB),NOSPLIT|NOFRAME,$0
-	MOVV	$runtime·systemstack_switch(SB), R1
-	ADDV	$8, R1	// get past prologue
-	MOVV	R1, (g_sched+gobuf_pc)(g)
+// Save state of caller into g->sched. Smashes R1.
+TEXT gosave<>(SB),NOSPLIT|NOFRAME,$0
+	MOVV	R31, (g_sched+gobuf_pc)(g)
 	MOVV	R29, (g_sched+gobuf_sp)(g)
 	MOVV	R0, (g_sched+gobuf_lr)(g)
 	MOVV	R0, (g_sched+gobuf_ret)(g)
 	// Assert ctxt is zero. See func save.
 	MOVV	(g_sched+gobuf_ctxt)(g), R1
 	BEQ	R1, 2(PC)
-	JAL	runtime·abort(SB)
-	RET
-
-// func asmcgocall_no_g(fn, arg unsafe.Pointer)
-// Call fn(arg) aligned appropriately for the gcc ABI.
-// Called on a system stack, and there may be no g yet (during needm).
-TEXT ·asmcgocall_no_g(SB),NOSPLIT,$0-16
-	MOVV	fn+0(FP), R25
-	MOVV	arg+8(FP), R4
-	JAL	(R25)
+	JAL	runtime·badctxt(SB)
 	RET
 
 // func asmcgocall(fn, arg unsafe.Pointer) int32
@@ -445,7 +445,7 @@ TEXT ·asmcgocall(SB),NOSPLIT,$0-20
 	MOVV	m_g0(R5), R6
 	BEQ	R6, g, g0
 
-	JAL	gosave_systemstack_switch<>(SB)
+	JAL	gosave<>(SB)
 	MOVV	R6, g
 	JAL	runtime·save_g(SB)
 	MOVV	(g_sched+gobuf_sp)(g), R29
@@ -805,7 +805,3 @@ TEXT runtime·panicSlice3CU(SB),NOSPLIT,$0-16
 	MOVV	R1, x+0(FP)
 	MOVV	R2, y+8(FP)
 	JMP	runtime·goPanicSlice3CU(SB)
-TEXT runtime·panicSliceConvert(SB),NOSPLIT,$0-16
-	MOVV	R3, x+0(FP)
-	MOVV	R4, y+8(FP)
-	JMP	runtime·goPanicSliceConvert(SB)

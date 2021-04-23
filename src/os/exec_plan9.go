@@ -5,7 +5,6 @@
 package os
 
 import (
-	"internal/itoa"
 	"runtime"
 	"syscall"
 	"time"
@@ -41,7 +40,7 @@ func startProcess(name string, argv []string, attr *ProcAttr) (p *Process, err e
 }
 
 func (p *Process) writeProcFile(file string, data string) error {
-	f, e := OpenFile("/proc/"+itoa.Itoa(p.Pid)+"/"+file, O_WRONLY, 0)
+	f, e := OpenFile("/proc/"+itoa(p.Pid)+"/"+file, O_WRONLY, 0)
 	if e != nil {
 		return e
 	}

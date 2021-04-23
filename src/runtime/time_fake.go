@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build faketime && !windows
-// +build faketime,!windows
+// +build faketime
+// +build !windows
 
 // Faketime isn't currently supported on Windows. This would require:
 //

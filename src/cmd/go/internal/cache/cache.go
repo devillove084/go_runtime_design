@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"cmd/go/internal/lockedfile"
+	"cmd/go/internal/renameio"
 )
 
 // An ActionID is a cache action key, the hash of a complete description of a
@@ -294,17 +294,10 @@ func (c *Cache) Trim() {
 	// We maintain in dir/trim.txt the time of the last completed cache trim.
 	// If the cache has been trimmed recently enough, do nothing.
 	// This is the common case.
-	// If the trim file is corrupt, detected if the file can't be parsed, or the
-	// trim time is too far in the future, attempt the trim anyway. It's possible that
-	// the cache was full when the corruption happened. Attempting a trim on
-	// an empty cache is cheap, so there wouldn't be a big performance hit in that case.
-	if data, err := lockedfile.Read(filepath.Join(c.dir, "trim.txt")); err == nil {
-		if t, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil {
-			lastTrim := time.Unix(t, 0)
-			if d := now.Sub(lastTrim); d < trimInterval && d > -mtimeInterval {
-				return
-			}
-		}
+	data, _ := renameio.ReadFile(filepath.Join(c.dir, "trim.txt"))
+	t, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+	if err == nil && now.Sub(time.Unix(t, 0)) < trimInterval {
+		return
 	}
 
 	// Trim each of the 256 subdirectories.
@@ -318,11 +311,7 @@ func (c *Cache) Trim() {
 
 	// Ignore errors from here: if we don't write the complete timestamp, the
 	// cache will appear older than it is, and we'll trim it again next time.
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "%d", now.Unix())
-	if err := lockedfile.Write(filepath.Join(c.dir, "trim.txt"), &b, 0666); err != nil {
-		return
-	}
+	renameio.WriteFile(filepath.Join(c.dir, "trim.txt"), []byte(fmt.Sprintf("%d", now.Unix())), 0666)
 }
 
 // trimSubdir trims a single cache subdirectory.

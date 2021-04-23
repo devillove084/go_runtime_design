@@ -89,12 +89,7 @@ package math
 //	Sqrt(±0) = ±0
 //	Sqrt(x < 0) = NaN
 //	Sqrt(NaN) = NaN
-func Sqrt(x float64) float64 {
-	if haveArchSqrt {
-		return archSqrt(x)
-	}
-	return sqrt(x)
-}
+func Sqrt(x float64) float64
 
 // Note: Sqrt is implemented in assembly on some systems.
 // Others have assembly stubs that jump to func sqrt below.

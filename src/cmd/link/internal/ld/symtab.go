@@ -37,7 +37,6 @@ import (
 	"cmd/link/internal/sym"
 	"debug/elf"
 	"fmt"
-	"internal/buildcfg"
 	"path/filepath"
 	"strings"
 )
@@ -105,7 +104,6 @@ func putelfsym(ctxt *Link, x loader.Sym, typ elf.SymType, curbind elf.SymBind) {
 	}
 
 	sname := ldr.SymExtname(x)
-	sname = mangleABIName(ldr, x, sname)
 
 	// One pass for each binding: elf.STB_LOCAL, elf.STB_GLOBAL,
 	// maybe one day elf.STB_WEAK.
@@ -831,28 +829,4 @@ func setCarrierSize(typ sym.SymKind, sz int64) {
 
 func isStaticTmp(name string) bool {
 	return strings.Contains(name, "."+obj.StaticNamePref)
-}
-
-// Mangle function name with ABI information.
-func mangleABIName(ldr *loader.Loader, x loader.Sym, name string) string {
-	// For functions with ABI wrappers, we have to make sure that we
-	// don't wind up with two elf symbol table entries with the same
-	// name (since this will generated an error from the external
-	// linker). If we have wrappers, keep the ABIInternal name
-	// unmangled since we want cross-load-module calls to target
-	// ABIInternal, and rename other symbols.
-	//
-	// TODO: avoid the ldr.Lookup calls below by instead using an aux
-	// sym or marker relocation to associate the wrapper with the
-	// wrapped function.
-	if !buildcfg.Experiment.RegabiWrappers {
-		return name
-	}
-
-	if !ldr.IsExternal(x) && ldr.SymType(x) == sym.STEXT && ldr.SymVersion(x) != sym.SymVerABIInternal {
-		if s2 := ldr.Lookup(name, sym.SymVerABIInternal); s2 != 0 && ldr.SymType(s2) == sym.STEXT {
-			name = fmt.Sprintf("%s.abi%d", name, ldr.SymVersion(x))
-		}
-	}
-	return name
 }

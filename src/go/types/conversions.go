@@ -20,7 +20,7 @@ func (check *Checker) conversion(x *operand, T Type) {
 	switch {
 	case constArg && isConstType(T):
 		// constant conversion
-		switch t := asBasic(T); {
+		switch t := T.Underlying().(*Basic); {
 		case representableConst(x.val, check, t, &x.val):
 			ok = true
 		case isInteger(x.typ) && isString(t):
@@ -55,8 +55,8 @@ func (check *Checker) conversion(x *operand, T Type) {
 		// - Keep untyped nil for untyped nil arguments.
 		// - For integer to string conversions, keep the argument type.
 		//   (See also the TODO below.)
-		if IsInterface(T) || constArg && !isConstType(T) || x.isNil() {
-			final = Default(x.typ) // default type of untyped nil is untyped nil
+		if IsInterface(T) || constArg && !isConstType(T) {
+			final = Default(x.typ)
 		} else if isInteger(x.typ) && isString(T) {
 			final = x.typ
 		}
@@ -87,8 +87,8 @@ func (x *operand) convertibleTo(check *Checker, T Type) bool {
 
 	// "x's type and T have identical underlying types if tags are ignored"
 	V := x.typ
-	Vu := under(V)
-	Tu := under(T)
+	Vu := V.Underlying()
+	Tu := T.Underlying()
 	if check.identicalIgnoreTags(Vu, Tu) {
 		return true
 	}
@@ -97,14 +97,14 @@ func (x *operand) convertibleTo(check *Checker, T Type) bool {
 	// have identical underlying types if tags are ignored"
 	if V, ok := V.(*Pointer); ok {
 		if T, ok := T.(*Pointer); ok {
-			if check.identicalIgnoreTags(under(V.base), under(T.base)) {
+			if check.identicalIgnoreTags(V.base.Underlying(), T.base.Underlying()) {
 				return true
 			}
 		}
 	}
 
 	// "x's type and T are both integer or floating point types"
-	if isIntegerOrFloat(V) && isIntegerOrFloat(T) {
+	if (isInteger(V) || isFloat(V)) && (isInteger(T) || isFloat(T)) {
 		return true
 	}
 
@@ -133,43 +133,31 @@ func (x *operand) convertibleTo(check *Checker, T Type) bool {
 		return true
 	}
 
-	// "x is a slice, T is a pointer-to-array type,
-	// and the slice and array types have identical element types."
-	if s := asSlice(V); s != nil {
-		if p := asPointer(T); p != nil {
-			if a := asArray(p.Elem()); a != nil {
-				if check.identical(s.Elem(), a.Elem()) {
-					return true
-				}
-			}
-		}
-	}
-
 	return false
 }
 
 func isUintptr(typ Type) bool {
-	t := asBasic(typ)
-	return t != nil && t.kind == Uintptr
+	t, ok := typ.Underlying().(*Basic)
+	return ok && t.kind == Uintptr
 }
 
 func isUnsafePointer(typ Type) bool {
-	// TODO(gri): Is this asBasic(typ) instead of typ.(*Basic) correct?
-	//            (The former calls under(), while the latter doesn't.)
+	// TODO(gri): Is this (typ.Underlying() instead of just typ) correct?
 	//            The spec does not say so, but gc claims it is. See also
 	//            issue 6326.
-	t := asBasic(typ)
-	return t != nil && t.kind == UnsafePointer
+	t, ok := typ.Underlying().(*Basic)
+	return ok && t.kind == UnsafePointer
 }
 
 func isPointer(typ Type) bool {
-	return asPointer(typ) != nil
+	_, ok := typ.Underlying().(*Pointer)
+	return ok
 }
 
 func isBytesOrRunes(typ Type) bool {
-	if s := asSlice(typ); s != nil {
-		t := asBasic(s.elem)
-		return t != nil && (t.kind == Byte || t.kind == Rune)
+	if s, ok := typ.(*Slice); ok {
+		t, ok := s.elem.Underlying().(*Basic)
+		return ok && (t.kind == Byte || t.kind == Rune)
 	}
 	return false
 }

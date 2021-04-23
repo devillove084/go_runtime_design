@@ -128,10 +128,6 @@ func testSyntaxErrors(t *testing.T, filename string) {
 	}
 	defer f.Close()
 
-	var mode Mode
-	if strings.HasSuffix(filename, ".go2") {
-		mode = AllowGenerics
-	}
 	ParseFile(filename, func(err error) {
 		e, ok := err.(Error)
 		if !ok {
@@ -164,9 +160,9 @@ func testSyntaxErrors(t *testing.T, filename string) {
 			// we have a match - eliminate this error
 			delete(declared, pos)
 		} else {
-			t.Errorf("%s:%s: unexpected error: %s", filename, orig, e.Msg)
+			t.Errorf("%s: unexpected error: %s", orig, e.Msg)
 		}
-	}, nil, mode)
+	}, nil, 0)
 
 	if *print {
 		fmt.Println()
@@ -175,7 +171,7 @@ func testSyntaxErrors(t *testing.T, filename string) {
 
 	// report expected but not reported errors
 	for pos, pattern := range declared {
-		t.Errorf("%s:%s: missing error: %s", filename, pos, pattern)
+		t.Errorf("%s: missing error: %s", pos, pattern)
 	}
 }
 

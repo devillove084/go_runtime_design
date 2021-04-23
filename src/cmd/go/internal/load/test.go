@@ -21,7 +21,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"cmd/go/internal/fsys"
 	"cmd/go/internal/str"
 	"cmd/go/internal/trace"
 )
@@ -46,8 +45,8 @@ type TestCover struct {
 // TestPackagesFor is like TestPackagesAndErrors but it returns
 // an error if the test packages or their dependencies have errors.
 // Only test packages without errors are returned.
-func TestPackagesFor(ctx context.Context, opts PackageOpts, p *Package, cover *TestCover) (pmain, ptest, pxtest *Package, err error) {
-	pmain, ptest, pxtest = TestPackagesAndErrors(ctx, opts, p, cover)
+func TestPackagesFor(ctx context.Context, p *Package, cover *TestCover) (pmain, ptest, pxtest *Package, err error) {
+	pmain, ptest, pxtest = TestPackagesAndErrors(ctx, p, cover)
 	for _, p1 := range []*Package{ptest, pxtest, pmain} {
 		if p1 == nil {
 			// pxtest may be nil
@@ -93,7 +92,7 @@ func TestPackagesFor(ctx context.Context, opts PackageOpts, p *Package, cover *T
 //
 // The caller is expected to have checked that len(p.TestGoFiles)+len(p.XTestGoFiles) > 0,
 // or else there's no point in any of this.
-func TestPackagesAndErrors(ctx context.Context, opts PackageOpts, p *Package, cover *TestCover) (pmain, ptest, pxtest *Package) {
+func TestPackagesAndErrors(ctx context.Context, p *Package, cover *TestCover) (pmain, ptest, pxtest *Package) {
 	ctx, span := trace.StartSpan(ctx, "load.TestPackagesAndErrors")
 	defer span.Done()
 
@@ -101,7 +100,7 @@ func TestPackagesAndErrors(ctx context.Context, opts PackageOpts, p *Package, co
 	defer pre.flush()
 	allImports := append([]string{}, p.TestImports...)
 	allImports = append(allImports, p.XTestImports...)
-	pre.preloadImports(ctx, opts, allImports, p.Internal.Build)
+	pre.preloadImports(allImports, p.Internal.Build)
 
 	var ptestErr, pxtestErr *PackageError
 	var imports, ximports []*Package
@@ -110,7 +109,7 @@ func TestPackagesAndErrors(ctx context.Context, opts PackageOpts, p *Package, co
 	stk.Push(p.ImportPath + " (test)")
 	rawTestImports := str.StringList(p.TestImports)
 	for i, path := range p.TestImports {
-		p1 := loadImport(ctx, opts, pre, path, p.Dir, p, &stk, p.Internal.Build.TestImportPos[path], ResolveImport)
+		p1 := loadImport(ctx, pre, path, p.Dir, p, &stk, p.Internal.Build.TestImportPos[path], ResolveImport)
 		if str.Contains(p1.Deps, p.ImportPath) || p1.ImportPath == p.ImportPath {
 			// Same error that loadPackage returns (via reusePackage) in pkg.go.
 			// Can't change that code, because that code is only for loading the
@@ -140,7 +139,7 @@ func TestPackagesAndErrors(ctx context.Context, opts PackageOpts, p *Package, co
 	pxtestNeedsPtest := false
 	rawXTestImports := str.StringList(p.XTestImports)
 	for i, path := range p.XTestImports {
-		p1 := loadImport(ctx, opts, pre, path, p.Dir, p, &stk, p.Internal.Build.XTestImportPos[path], ResolveImport)
+		p1 := loadImport(ctx, pre, path, p.Dir, p, &stk, p.Internal.Build.XTestImportPos[path], ResolveImport)
 		if p1.ImportPath == p.ImportPath {
 			pxtestNeedsPtest = true
 		} else {
@@ -204,7 +203,6 @@ func TestPackagesAndErrors(ctx context.Context, opts PackageOpts, p *Package, co
 		}
 		ptest.Internal.Embed = testEmbed
 		ptest.EmbedFiles = str.StringList(p.EmbedFiles, p.TestEmbedFiles)
-		ptest.Internal.OrigImportPath = p.Internal.OrigImportPath
 		ptest.collectDeps()
 	} else {
 		ptest = p
@@ -234,12 +232,11 @@ func TestPackagesAndErrors(ctx context.Context, opts PackageOpts, p *Package, co
 				Imports:    ximports,
 				RawImports: rawXTestImports,
 
-				Asmflags:       p.Internal.Asmflags,
-				Gcflags:        p.Internal.Gcflags,
-				Ldflags:        p.Internal.Ldflags,
-				Gccgoflags:     p.Internal.Gccgoflags,
-				Embed:          xtestEmbed,
-				OrigImportPath: p.Internal.OrigImportPath,
+				Asmflags:   p.Internal.Asmflags,
+				Gcflags:    p.Internal.Gcflags,
+				Ldflags:    p.Internal.Ldflags,
+				Gccgoflags: p.Internal.Gccgoflags,
+				Embed:      xtestEmbed,
 			},
 		}
 		if pxtestNeedsPtest {
@@ -260,13 +257,12 @@ func TestPackagesAndErrors(ctx context.Context, opts PackageOpts, p *Package, co
 			Module:     p.Module,
 		},
 		Internal: PackageInternal{
-			Build:          &build.Package{Name: "main"},
-			BuildInfo:      p.Internal.BuildInfo,
-			Asmflags:       p.Internal.Asmflags,
-			Gcflags:        p.Internal.Gcflags,
-			Ldflags:        p.Internal.Ldflags,
-			Gccgoflags:     p.Internal.Gccgoflags,
-			OrigImportPath: p.Internal.OrigImportPath,
+			Build:      &build.Package{Name: "main"},
+			BuildInfo:  p.Internal.BuildInfo,
+			Asmflags:   p.Internal.Asmflags,
+			Gcflags:    p.Internal.Gcflags,
+			Ldflags:    p.Internal.Ldflags,
+			Gccgoflags: p.Internal.Gccgoflags,
 		},
 	}
 
@@ -281,7 +277,7 @@ func TestPackagesAndErrors(ctx context.Context, opts PackageOpts, p *Package, co
 		if dep == ptest.ImportPath {
 			pmain.Internal.Imports = append(pmain.Internal.Imports, ptest)
 		} else {
-			p1 := loadImport(ctx, opts, pre, dep, "", nil, &stk, nil, 0)
+			p1 := loadImport(ctx, pre, dep, "", nil, &stk, nil, 0)
 			pmain.Internal.Imports = append(pmain.Internal.Imports, p1)
 		}
 	}
@@ -294,12 +290,10 @@ func TestPackagesAndErrors(ctx context.Context, opts PackageOpts, p *Package, co
 			seen[p1] = true
 		}
 		for _, p1 := range cover.Pkgs {
-			if seen[p1] {
-				// Don't add duplicate imports.
-				continue
+			if !seen[p1] {
+				seen[p1] = true
+				pmain.Internal.Imports = append(pmain.Internal.Imports, p1)
 			}
-			seen[p1] = true
-			pmain.Internal.Imports = append(pmain.Internal.Imports, p1)
 		}
 	}
 
@@ -582,13 +576,7 @@ type testFunc struct {
 var testFileSet = token.NewFileSet()
 
 func (t *testFuncs) load(filename, pkg string, doImport, seen *bool) error {
-	// Pass in the overlaid source if we have an overlay for this file.
-	src, err := fsys.Open(filename)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-	f, err := parser.ParseFile(testFileSet, filename, src, parser.ParseComments)
+	f, err := parser.ParseFile(testFileSet, filename, nil, parser.ParseComments)
 	if err != nil {
 		return err
 	}

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build darwin && !ios
 // +build darwin,!ios
 
 // Package macOS provides cgo-less wrappers for Core Foundation and
@@ -40,6 +39,7 @@ type CFString CFRef
 const kCFAllocatorDefault = 0
 const kCFStringEncodingUTF8 = 0x08000100
 
+//go:linkname x509_CFStringCreateWithBytes x509_CFStringCreateWithBytes
 //go:cgo_import_dynamic x509_CFStringCreateWithBytes CFStringCreateWithBytes "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 // StringToCFString returns a copy of the UTF-8 contents of s as a new CFString.
@@ -52,6 +52,7 @@ func StringToCFString(s string) CFString {
 }
 func x509_CFStringCreateWithBytes_trampoline()
 
+//go:linkname x509_CFDictionaryGetValueIfPresent x509_CFDictionaryGetValueIfPresent
 //go:cgo_import_dynamic x509_CFDictionaryGetValueIfPresent CFDictionaryGetValueIfPresent "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 func CFDictionaryGetValueIfPresent(dict CFRef, key CFString) (value CFRef, ok bool) {
@@ -66,6 +67,7 @@ func x509_CFDictionaryGetValueIfPresent_trampoline()
 
 const kCFNumberSInt32Type = 3
 
+//go:linkname x509_CFNumberGetValue x509_CFNumberGetValue
 //go:cgo_import_dynamic x509_CFNumberGetValue CFNumberGetValue "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 func CFNumberGetValue(num CFRef) (int32, error) {
@@ -79,6 +81,7 @@ func CFNumberGetValue(num CFRef) (int32, error) {
 }
 func x509_CFNumberGetValue_trampoline()
 
+//go:linkname x509_CFDataGetLength x509_CFDataGetLength
 //go:cgo_import_dynamic x509_CFDataGetLength CFDataGetLength "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 func CFDataGetLength(data CFRef) int {
@@ -87,6 +90,7 @@ func CFDataGetLength(data CFRef) int {
 }
 func x509_CFDataGetLength_trampoline()
 
+//go:linkname x509_CFDataGetBytePtr x509_CFDataGetBytePtr
 //go:cgo_import_dynamic x509_CFDataGetBytePtr CFDataGetBytePtr "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 func CFDataGetBytePtr(data CFRef) uintptr {
@@ -95,6 +99,7 @@ func CFDataGetBytePtr(data CFRef) uintptr {
 }
 func x509_CFDataGetBytePtr_trampoline()
 
+//go:linkname x509_CFArrayGetCount x509_CFArrayGetCount
 //go:cgo_import_dynamic x509_CFArrayGetCount CFArrayGetCount "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 func CFArrayGetCount(array CFRef) int {
@@ -103,6 +108,7 @@ func CFArrayGetCount(array CFRef) int {
 }
 func x509_CFArrayGetCount_trampoline()
 
+//go:linkname x509_CFArrayGetValueAtIndex x509_CFArrayGetValueAtIndex
 //go:cgo_import_dynamic x509_CFArrayGetValueAtIndex CFArrayGetValueAtIndex "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 func CFArrayGetValueAtIndex(array CFRef, index int) CFRef {
@@ -111,6 +117,7 @@ func CFArrayGetValueAtIndex(array CFRef, index int) CFRef {
 }
 func x509_CFArrayGetValueAtIndex_trampoline()
 
+//go:linkname x509_CFEqual x509_CFEqual
 //go:cgo_import_dynamic x509_CFEqual CFEqual "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 func CFEqual(a, b CFRef) bool {
@@ -119,6 +126,7 @@ func CFEqual(a, b CFRef) bool {
 }
 func x509_CFEqual_trampoline()
 
+//go:linkname x509_CFRelease x509_CFRelease
 //go:cgo_import_dynamic x509_CFRelease CFRelease "/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation"
 
 func CFRelease(ref CFRef) {

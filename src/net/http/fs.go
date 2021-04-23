@@ -46,7 +46,7 @@ type Dir string
 // to a possibly better non-nil error. In particular, it turns OS-specific errors
 // about opening files in non-directories into fs.ErrNotExist. See Issue 18984.
 func mapDirOpenError(originalErr error, name string) error {
-	if errors.Is(originalErr, fs.ErrNotExist) || errors.Is(originalErr, fs.ErrPermission) {
+	if os.IsNotExist(originalErr) || os.IsPermission(originalErr) {
 		return originalErr
 	}
 
@@ -670,10 +670,10 @@ func serveFile(w ResponseWriter, r *Request, fs FileSystem, name string, redirec
 // and historically Go's ServeContent always returned just "404 Not Found" for
 // all errors. We don't want to start leaking information in error messages.
 func toHTTPError(err error) (msg string, httpStatus int) {
-	if errors.Is(err, fs.ErrNotExist) {
+	if os.IsNotExist(err) {
 		return "404 page not found", StatusNotFound
 	}
-	if errors.Is(err, fs.ErrPermission) {
+	if os.IsPermission(err) {
 		return "403 Forbidden", StatusForbidden
 	}
 	// Default:

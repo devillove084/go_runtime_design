@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !cmd_go_bootstrap
 // +build !cmd_go_bootstrap
 
 // This code is compiled into the real 'go' binary, but it is not
@@ -28,7 +27,7 @@ import (
 	"cmd/internal/browser"
 )
 
-// impatientInsecureHTTPClient is used with GOINSECURE,
+// impatientInsecureHTTPClient is used in -insecure mode,
 // when we're connecting to https servers that might not be there
 // or might be using self-signed certificates.
 var impatientInsecureHTTPClient = &http.Client{

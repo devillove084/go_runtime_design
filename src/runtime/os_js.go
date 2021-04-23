@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build js && wasm
 // +build js,wasm
 
 package runtime
@@ -31,21 +30,11 @@ func wasmWrite(fd uintptr, p unsafe.Pointer, n int32)
 
 func usleep(usec uint32)
 
-//go:nosplit
-func usleep_no_g(usec uint32) {
-	usleep(usec)
-}
-
 func exitThread(wait *uint32)
 
 type mOS struct{}
 
 func osyield()
-
-//go:nosplit
-func osyield_no_g() {
-	osyield()
-}
 
 const _SIGSEGV = 0xb
 

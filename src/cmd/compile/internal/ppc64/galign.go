@@ -5,14 +5,14 @@
 package ppc64
 
 import (
-	"cmd/compile/internal/ssagen"
+	"cmd/compile/internal/gc"
 	"cmd/internal/obj/ppc64"
-	"internal/buildcfg"
+	"cmd/internal/objabi"
 )
 
-func Init(arch *ssagen.ArchInfo) {
+func Init(arch *gc.Arch) {
 	arch.LinkArch = &ppc64.Linkppc64
-	if buildcfg.GOARCH == "ppc64le" {
+	if objabi.GOARCH == "ppc64le" {
 		arch.LinkArch = &ppc64.Linkppc64le
 	}
 	arch.REGSP = ppc64.REGSP

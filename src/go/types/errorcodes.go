@@ -159,7 +159,7 @@ const (
 	_UntypedNil
 
 	// _WrongAssignCount occurs when the number of values on the right-hand side
-	// of an assignment or initialization expression does not match the number
+	// of an assignment or or initialization expression does not match the number
 	// of variables on the left-hand side.
 	//
 	// Example:
@@ -386,8 +386,8 @@ const (
 	// _InvalidInitSig occurs when an init function declares parameters or
 	// results.
 	//
-	// Deprecated: no longer emitted by the type checker. _InvalidInitDecl is
-	// used instead.
+	// Example:
+	//  func init() int { return 1 }
 	_InvalidInitSig
 
 	// _InvalidInitDecl occurs when init is declared as anything other than a
@@ -395,9 +395,6 @@ const (
 	//
 	// Example:
 	//  var init = 1
-	//
-	// Example:
-	//  func init() int { return 1 }
 	_InvalidInitDecl
 
 	// _InvalidMainDecl occurs when main is declared as anything other than a
@@ -756,11 +753,51 @@ const (
 	_NonVariadicDotDotDot
 
 	// _MisplacedDotDotDot occurs when a "..." is used somewhere other than the
-	// final argument in a function declaration.
+	// final argument to a function call.
 	//
 	// Example:
-	// 	func f(...int, int)
+	//  func printArgs(args ...int) {
+	//  	for _, a := range args {
+	//  		println(a)
+	//  	}
+	//  }
+	//
+	//  func f() {
+	//  	a := []int{1,2,3}
+	//  	printArgs(0, a...)
+	//  }
 	_MisplacedDotDotDot
+
+	// _InvalidDotDotDotOperand occurs when a "..." operator is applied to a
+	// single-valued operand.
+	//
+	// Example:
+	//  func printArgs(args ...int) {
+	//  	for _, a := range args {
+	//  		println(a)
+	//  	}
+	//  }
+	//
+	//  func f() {
+	//  	a := 1
+	//  	printArgs(a...)
+	//  }
+	//
+	// Example:
+	//  func args() (int, int) {
+	//  	return 1, 2
+	//  }
+	//
+	//  func printArgs(args ...int) {
+	//  	for _, a := range args {
+	//  		println(a)
+	//  	}
+	//  }
+	//
+	//  func g() {
+	//  	printArgs(args()...)
+	//  }
+	_InvalidDotDotDotOperand
 
 	// _InvalidDotDotDot occurs when a "..." is used in a non-variadic built-in
 	// function.
@@ -882,45 +919,6 @@ const (
 	// Example:
 	//  var _ = real(int(1))
 	_InvalidReal
-
-	// _InvalidUnsafeAdd occurs when unsafe.Add is called with a
-	// length argument that is not of integer type.
-	//
-	// Example:
-	//  import "unsafe"
-	//
-	//  var p unsafe.Pointer
-	//  var _ = unsafe.Add(p, float64(1))
-	_InvalidUnsafeAdd
-
-	// _InvalidUnsafeSlice occurs when unsafe.Slice is called with a
-	// pointer argument that is not of pointer type or a length argument
-	// that is not of integer type, negative, or out of bounds.
-	//
-	// Example:
-	//  import "unsafe"
-	//
-	//  var x int
-	//  var _ = unsafe.Slice(x, 1)
-	//
-	// Example:
-	//  import "unsafe"
-	//
-	//  var x int
-	//  var _ = unsafe.Slice(&x, float64(1))
-	//
-	// Example:
-	//  import "unsafe"
-	//
-	//  var x int
-	//  var _ = unsafe.Slice(&x, -1)
-	//
-	// Example:
-	//  import "unsafe"
-	//
-	//  var x int
-	//  var _ = unsafe.Slice(&x, uint64(1) << 63)
-	_InvalidUnsafeSlice
 
 	/* exprs > assertion */
 
@@ -1079,6 +1077,18 @@ const (
 	//  	for i := 0; i < 10; j := 0 {}
 	//  }
 	_InvalidPostDecl
+
+	// _InvalidChanRange occurs when a send-only channel used in a range
+	// expression.
+	//
+	// Example:
+	//  func sum(c chan<- int) {
+	//  	s := 0
+	//  	for i := range c {
+	//  		s += i
+	//  	}
+	//  }
+	_InvalidChanRange
 
 	// _InvalidIterVar occurs when two iteration variables are used while ranging
 	// over a channel.
@@ -1353,11 +1363,4 @@ const (
 	//  	return i
 	//  }
 	_InvalidGo
-
-	// _BadDecl occurs when a declaration has invalid syntax.
-	_BadDecl
-
-	// _Todo is a placeholder for error codes that have not been decided.
-	// TODO(rFindley) remove this error code after deciding on errors for generics code.
-	_Todo
 )

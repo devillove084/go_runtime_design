@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build linux && (mips || mipsle)
 // +build linux
 // +build mips mipsle
 
@@ -224,4 +223,6 @@ func (cmsg *Cmsghdr) SetLen(length int) {
 	cmsg.Len = uint32(length)
 }
 
-func rawVforkSyscall(trap, a1 uintptr) (r1 uintptr, err Errno)
+func rawVforkSyscall(trap, a1 uintptr) (r1 uintptr, err Errno) {
+	panic("not implemented")
+}

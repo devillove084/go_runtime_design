@@ -8,6 +8,7 @@ import (
 	"cmd/internal/objabi"
 	"internal/testenv"
 	"io/ioutil"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -85,7 +86,11 @@ func TestDedupLibrariesOpenBSDLink(t *testing.T) {
 	testenv.MustHaveCGO(t)
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "dedup-build")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
 
 	// cgo_import_dynamic both the unversioned libraries and pull in the
 	// net package to get a cgo package with a versioned library.

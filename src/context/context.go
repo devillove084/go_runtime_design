@@ -303,8 +303,10 @@ func parentCancelCtx(parent Context) (*cancelCtx, bool) {
 	if !ok {
 		return nil, false
 	}
-	pdone, _ := p.done.Load().(chan struct{})
-	if pdone != done {
+	p.mu.Lock()
+	ok = p.done == done
+	p.mu.Unlock()
+	if !ok {
 		return nil, false
 	}
 	return p, true
@@ -343,7 +345,7 @@ type cancelCtx struct {
 	Context
 
 	mu       sync.Mutex            // protects following fields
-	done     atomic.Value          // of chan struct{}, created lazily, closed by first cancel call
+	done     chan struct{}         // created lazily, closed by first cancel call
 	children map[canceler]struct{} // set to nil by the first cancel call
 	err      error                 // set to non-nil by the first cancel call
 }
@@ -356,18 +358,13 @@ func (c *cancelCtx) Value(key interface{}) interface{} {
 }
 
 func (c *cancelCtx) Done() <-chan struct{} {
-	d := c.done.Load()
-	if d != nil {
-		return d.(chan struct{})
-	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	d = c.done.Load()
-	if d == nil {
-		d = make(chan struct{})
-		c.done.Store(d)
+	if c.done == nil {
+		c.done = make(chan struct{})
 	}
-	return d.(chan struct{})
+	d := c.done
+	c.mu.Unlock()
+	return d
 }
 
 func (c *cancelCtx) Err() error {
@@ -404,11 +401,10 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 		return // already canceled
 	}
 	c.err = err
-	d, _ := c.done.Load().(chan struct{})
-	if d == nil {
-		c.done.Store(closedchan)
+	if c.done == nil {
+		c.done = closedchan
 	} else {
-		close(d)
+		close(c.done)
 	}
 	for child := range c.children {
 		// NOTE: acquiring the child's lock while holding parent's lock.

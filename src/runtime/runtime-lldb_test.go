@@ -142,10 +142,14 @@ func TestLldbPython(t *testing.T) {
 
 	checkLldbPython(t)
 
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("", "go-build")
+	if err != nil {
+		t.Fatalf("failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(dir)
 
 	src := filepath.Join(dir, "main.go")
-	err := os.WriteFile(src, []byte(lldbHelloSource), 0644)
+	err = os.WriteFile(src, []byte(lldbHelloSource), 0644)
 	if err != nil {
 		t.Fatalf("failed to create src file: %v", err)
 	}

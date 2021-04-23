@@ -36,7 +36,6 @@ import (
 	"cmd/internal/sys"
 	"encoding/binary"
 	"fmt"
-	"internal/buildcfg"
 	"log"
 	"strings"
 )
@@ -1888,7 +1887,7 @@ func lookForJCC(p *obj.Prog) *obj.Prog {
 func fusedJump(p *obj.Prog) (bool, uint8) {
 	var fusedSize uint8
 
-	// The first instruction in a macro fused pair may be preceded by the LOCK prefix,
+	// The first instruction in a macro fused pair may be preceeded by the LOCK prefix,
 	// or possibly an XACQUIRE/XRELEASE prefix followed by a LOCK prefix. If it is, we
 	// need to be careful to insert any padding before the locks rather than directly after them.
 
@@ -2461,7 +2460,7 @@ func instinit(ctxt *obj.Link) {
 	}
 }
 
-var isAndroid = buildcfg.GOOS == "android"
+var isAndroid = objabi.GOOS == "android"
 
 func prefixof(ctxt *obj.Link, a *obj.Addr) int {
 	if a.Reg < REG_CS && a.Index < REG_CS { // fast path
@@ -5307,7 +5306,7 @@ bad:
 		}
 	}
 
-	ctxt.Diag("%s: invalid instruction: %v", cursym.Name, p)
+	ctxt.Diag("invalid instruction: %v", p)
 }
 
 // byteswapreg returns a byte-addressable register (AX, BX, CX, DX)

@@ -9,10 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"go/build/constraint"
 	"go/doc"
 	"go/token"
-	"internal/buildcfg"
 	exec "internal/execabs"
 	"internal/goroot"
 	"internal/goversion"
@@ -49,18 +47,16 @@ type Context struct {
 	UseAllFiles bool   // use files regardless of +build lines, file names
 	Compiler    string // compiler to assume when computing target paths
 
-	// The build, tool, and release tags specify build constraints
+	// The build and release tags specify build constraints
 	// that should be considered satisfied when processing +build lines.
 	// Clients creating a new context may customize BuildTags, which
-	// defaults to empty, but it is usually an error to customize ToolTags or ReleaseTags.
-	// ToolTags defaults to build tags appropriate to the current Go toolchain configuration.
-	// ReleaseTags defaults to the list of Go releases the current release is compatible with.
+	// defaults to empty, but it is usually an error to customize ReleaseTags,
+	// which defaults to the list of Go releases the current release is compatible with.
 	// BuildTags is not set for the Default build Context.
-	// In addition to the BuildTags, ToolTags, and ReleaseTags, build constraints
+	// In addition to the BuildTags and ReleaseTags, build constraints
 	// consider the values of GOARCH and GOOS as satisfied tags.
 	// The last element in ReleaseTags is assumed to be the current release.
 	BuildTags   []string
-	ToolTags    []string
 	ReleaseTags []string
 
 	// The install suffix specifies a suffix to use in the name of the installation
@@ -191,7 +187,6 @@ func (ctxt *Context) readDir(path string) ([]fs.FileInfo, error) {
 	if f := ctxt.ReadDir; f != nil {
 		return f(path)
 	}
-	// TODO: use os.ReadDir
 	return ioutil.ReadDir(path)
 }
 
@@ -295,26 +290,16 @@ func defaultGOPATH() string {
 	return ""
 }
 
-var defaultToolTags, defaultReleaseTags []string
+var defaultReleaseTags []string
 
 func defaultContext() Context {
 	var c Context
 
-	c.GOARCH = buildcfg.GOARCH
-	c.GOOS = buildcfg.GOOS
+	c.GOARCH = envOr("GOARCH", runtime.GOARCH)
+	c.GOOS = envOr("GOOS", runtime.GOOS)
 	c.GOROOT = pathpkg.Clean(runtime.GOROOT())
 	c.GOPATH = envOr("GOPATH", defaultGOPATH())
 	c.Compiler = runtime.Compiler
-
-	// For each experiment that has been enabled in the toolchain, define a
-	// build tag with the same name but prefixed by "goexperiment." which can be
-	// used for compiling alternative files for the experiment. This allows
-	// changes for the experiment, like extra struct fields in the runtime,
-	// without affecting the base non-experiment code at all.
-	for _, exp := range buildcfg.EnabledExperiments() {
-		c.ToolTags = append(c.ToolTags, "goexperiment."+exp)
-	}
-	defaultToolTags = append([]string{}, c.ToolTags...) // our own private copy
 
 	// Each major Go release in the Go 1.x series adds a new
 	// "go1.x" release tag. That is, the go1.x tag is present in
@@ -1069,7 +1054,7 @@ func (ctxt *Context) importGo(p *Package, path, srcDir string, mode ImportMode) 
 	// we must not being doing special things like AllowBinary or IgnoreVendor,
 	// and all the file system callbacks must be nil (we're meant to use the local file system).
 	if mode&AllowBinary != 0 || mode&IgnoreVendor != 0 ||
-		ctxt.JoinPath != nil || ctxt.SplitPathList != nil || ctxt.IsAbsPath != nil || ctxt.IsDir != nil || ctxt.HasSubdir != nil || ctxt.ReadDir != nil || ctxt.OpenFile != nil || !equal(ctxt.ToolTags, defaultToolTags) || !equal(ctxt.ReleaseTags, defaultReleaseTags) {
+		ctxt.JoinPath != nil || ctxt.SplitPathList != nil || ctxt.IsAbsPath != nil || ctxt.IsDir != nil || ctxt.HasSubdir != nil || ctxt.ReadDir != nil || ctxt.OpenFile != nil || !equal(ctxt.ReleaseTags, defaultReleaseTags) {
 		return errNoModules
 	}
 
@@ -1438,7 +1423,7 @@ func (ctxt *Context) matchFile(dir, name string, allTags map[string]bool, binary
 	// Look for +build comments to accept or reject the file.
 	ok, sawBinaryOnly, err := ctxt.shouldBuild(info.header, allTags)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %v", name, err)
+		return nil, err
 	}
 	if !ok && !ctxt.UseAllFiles {
 		return nil, nil
@@ -1474,12 +1459,11 @@ var (
 	bSlashSlash = []byte(slashSlash)
 	bStarSlash  = []byte(starSlash)
 	bSlashStar  = []byte(slashStar)
-	bPlusBuild  = []byte("+build")
 
 	goBuildComment = []byte("//go:build")
 
 	errGoBuildWithoutBuild = errors.New("//go:build comment without // +build comment")
-	errMultipleGoBuild     = errors.New("multiple //go:build comments")
+	errMultipleGoBuild     = errors.New("multiple //go:build comments") // unused in Go 1.(N-1)
 )
 
 func isGoBuildComment(line []byte) bool {
@@ -1514,7 +1498,8 @@ var binaryOnlyComment = []byte("//go:binary-only-package")
 // shouldBuild reports whether the file should be built
 // and whether a //go:binary-only-package comment was found.
 func (ctxt *Context) shouldBuild(content []byte, allTags map[string]bool) (shouldBuild, binaryOnly bool, err error) {
-	// Identify leading run of // comments and blank lines,
+
+	// Pass 1. Identify leading run of // comments and blank lines,
 	// which must be followed by a blank line.
 	// Also identify any //go:build comments.
 	content, goBuild, sawBinaryOnly, err := parseFileHeader(content)
@@ -1522,40 +1507,42 @@ func (ctxt *Context) shouldBuild(content []byte, allTags map[string]bool) (shoul
 		return false, false, err
 	}
 
-	// If //go:build line is present, it controls.
-	// Otherwise fall back to +build processing.
-	switch {
-	case goBuild != nil:
-		x, err := constraint.Parse(string(goBuild))
-		if err != nil {
-			return false, false, fmt.Errorf("parsing //go:build line: %v", err)
+	// Pass 2.  Process each +build line in the run.
+	p := content
+	shouldBuild = true
+	sawBuild := false
+	for len(p) > 0 {
+		line := p
+		if i := bytes.IndexByte(line, '\n'); i >= 0 {
+			line, p = line[:i], p[i+1:]
+		} else {
+			p = p[len(p):]
 		}
-		shouldBuild = ctxt.eval(x, allTags)
-
-	default:
-		shouldBuild = true
-		p := content
-		for len(p) > 0 {
-			line := p
-			if i := bytes.IndexByte(line, '\n'); i >= 0 {
-				line, p = line[:i], p[i+1:]
-			} else {
-				p = p[len(p):]
-			}
-			line = bytes.TrimSpace(line)
-			if !bytes.HasPrefix(line, bSlashSlash) || !bytes.Contains(line, bPlusBuild) {
-				continue
-			}
-			text := string(line)
-			if !constraint.IsPlusBuild(text) {
-				continue
-			}
-			if x, err := constraint.Parse(text); err == nil {
-				if !ctxt.eval(x, allTags) {
+		line = bytes.TrimSpace(line)
+		if !bytes.HasPrefix(line, bSlashSlash) {
+			continue
+		}
+		line = bytes.TrimSpace(line[len(bSlashSlash):])
+		if len(line) > 0 && line[0] == '+' {
+			// Looks like a comment +line.
+			f := strings.Fields(string(line))
+			if f[0] == "+build" {
+				sawBuild = true
+				ok := false
+				for _, tok := range f[1:] {
+					if ctxt.match(tok, allTags) {
+						ok = true
+					}
+				}
+				if !ok {
 					shouldBuild = false
 				}
 			}
 		}
+	}
+
+	if goBuild != nil && !sawBuild {
+		return false, false, errGoBuildWithoutBuild
 	}
 
 	return shouldBuild, sawBinaryOnly, nil
@@ -1593,7 +1580,7 @@ Lines:
 		}
 
 		if !inSlashStar && isGoBuildComment(line) {
-			if goBuild != nil {
+			if false && goBuild != nil { // enabled in Go 1.N
 				return nil, nil, false, errMultipleGoBuild
 			}
 			goBuild = line
@@ -1662,7 +1649,7 @@ func (ctxt *Context) saveCgo(filename string, di *Package, cg *ast.CommentGroup)
 		if len(cond) > 0 {
 			ok := false
 			for _, c := range cond {
-				if ctxt.matchAuto(c, nil) {
+				if ctxt.match(c, nil) {
 					ok = true
 					break
 				}
@@ -1844,42 +1831,48 @@ func splitQuoted(s string) (r []string, err error) {
 	return args, err
 }
 
-// matchAuto interprets text as either a +build or //go:build expression (whichever works),
-// reporting whether the expression matches the build context.
+// match reports whether the name is one of:
 //
-// matchAuto is only used for testing of tag evaluation
-// and in #cgo lines, which accept either syntax.
-func (ctxt *Context) matchAuto(text string, allTags map[string]bool) bool {
-	if strings.ContainsAny(text, "&|()") {
-		text = "//go:build " + text
-	} else {
-		text = "// +build " + text
-	}
-	x, err := constraint.Parse(text)
-	if err != nil {
-		return false
-	}
-	return ctxt.eval(x, allTags)
-}
-
-func (ctxt *Context) eval(x constraint.Expr, allTags map[string]bool) bool {
-	return x.Eval(func(tag string) bool { return ctxt.matchTag(tag, allTags) })
-}
-
-// matchTag reports whether the name is one of:
-//
-//	cgo (if cgo is enabled)
 //	$GOOS
 //	$GOARCH
+//	cgo (if cgo is enabled)
+//	!cgo (if cgo is disabled)
 //	ctxt.Compiler
-//	linux (if GOOS = android)
-//	solaris (if GOOS = illumos)
+//	!ctxt.Compiler
 //	tag (if tag is listed in ctxt.BuildTags or ctxt.ReleaseTags)
+//	!tag (if tag is not listed in ctxt.BuildTags or ctxt.ReleaseTags)
+//	a comma-separated list of any of these
 //
-// It records all consulted tags in allTags.
-func (ctxt *Context) matchTag(name string, allTags map[string]bool) bool {
+func (ctxt *Context) match(name string, allTags map[string]bool) bool {
+	if name == "" {
+		if allTags != nil {
+			allTags[name] = true
+		}
+		return false
+	}
+	if i := strings.Index(name, ","); i >= 0 {
+		// comma-separated list
+		ok1 := ctxt.match(name[:i], allTags)
+		ok2 := ctxt.match(name[i+1:], allTags)
+		return ok1 && ok2
+	}
+	if strings.HasPrefix(name, "!!") { // bad syntax, reject always
+		return false
+	}
+	if strings.HasPrefix(name, "!") { // negation
+		return len(name) > 1 && !ctxt.match(name[1:], allTags)
+	}
+
 	if allTags != nil {
 		allTags[name] = true
+	}
+
+	// Tags must be letters, digits, underscores or dots.
+	// Unlike in Go identifiers, all digits are fine (e.g., "386").
+	for _, c := range name {
+		if !unicode.IsLetter(c) && !unicode.IsDigit(c) && c != '_' && c != '.' {
+			return false
+		}
 	}
 
 	// special tags
@@ -1901,11 +1894,6 @@ func (ctxt *Context) matchTag(name string, allTags map[string]bool) bool {
 
 	// other tags
 	for _, tag := range ctxt.BuildTags {
-		if tag == name {
-			return true
-		}
-	}
-	for _, tag := range ctxt.ToolTags {
 		if tag == name {
 			return true
 		}
@@ -1958,10 +1946,10 @@ func (ctxt *Context) goodOSArchFile(name string, allTags map[string]bool) bool {
 	}
 	n := len(l)
 	if n >= 2 && knownOS[l[n-2]] && knownArch[l[n-1]] {
-		return ctxt.matchTag(l[n-1], allTags) && ctxt.matchTag(l[n-2], allTags)
+		return ctxt.match(l[n-1], allTags) && ctxt.match(l[n-2], allTags)
 	}
 	if n >= 1 && (knownOS[l[n-1]] || knownArch[l[n-1]]) {
-		return ctxt.matchTag(l[n-1], allTags)
+		return ctxt.match(l[n-1], allTags)
 	}
 	return true
 }

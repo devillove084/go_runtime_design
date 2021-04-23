@@ -522,11 +522,6 @@ func sysconf(name int32) int64 {
 func usleep1(usec uint32)
 
 //go:nosplit
-func usleep_no_g(µs uint32) {
-	usleep1(µs)
-}
-
-//go:nosplit
 func usleep(µs uint32) {
 	usleep1(µs)
 }
@@ -574,13 +569,16 @@ func setNonblock(fd int32) {
 func osyield1()
 
 //go:nosplit
-func osyield_no_g() {
-	osyield1()
-}
-
-//go:nosplit
 func osyield() {
-	sysvicall0(&libc_sched_yield)
+	_g_ := getg()
+
+	// Check the validity of m because we might be called in cgo callback
+	// path early enough where there isn't a m available yet.
+	if _g_ != nil && _g_.m != nil {
+		sysvicall0(&libc_sched_yield)
+		return
+	}
+	osyield1()
 }
 
 //go:linkname executablePath os.executablePath

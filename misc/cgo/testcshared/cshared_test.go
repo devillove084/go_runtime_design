@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -124,7 +125,7 @@ func testMain(m *testing.M) int {
 	// Copy testdata into GOPATH/src/testcshared, along with a go.mod file
 	// declaring the same path.
 
-	GOPATH, err := os.MkdirTemp("", "cshared_test")
+	GOPATH, err := ioutil.TempDir("", "cshared_test")
 	if err != nil {
 		log.Panic(err)
 	}
@@ -139,7 +140,7 @@ func testMain(m *testing.M) int {
 		log.Panic(err)
 	}
 	os.Setenv("PWD", modRoot)
-	if err := os.WriteFile("go.mod", []byte("module testcshared\n"), 0666); err != nil {
+	if err := ioutil.WriteFile("go.mod", []byte("module testcshared\n"), 0666); err != nil {
 		log.Panic(err)
 	}
 
@@ -259,7 +260,7 @@ func createHeaders() error {
 	// The 'cgo' command generates a number of additional artifacts,
 	// but we're only interested in the header.
 	// Shunt the rest of the outputs to a temporary directory.
-	objDir, err := os.MkdirTemp("", "testcshared_obj")
+	objDir, err := ioutil.TempDir("", "testcshared_obj")
 	if err != nil {
 		return err
 	}
@@ -380,7 +381,7 @@ func main() {
 
 	srcfile := filepath.Join(tmpdir, "test.go")
 	objfile := filepath.Join(tmpdir, "test.dll")
-	if err := os.WriteFile(srcfile, []byte(prog), 0666); err != nil {
+	if err := ioutil.WriteFile(srcfile, []byte(prog), 0666); err != nil {
 		t.Fatal(err)
 	}
 	argv := []string{"build", "-buildmode=c-shared"}
@@ -642,7 +643,7 @@ func TestPIE(t *testing.T) {
 
 // Test that installing a second time recreates the header file.
 func TestCachedInstall(t *testing.T) {
-	tmpdir, err := os.MkdirTemp("", "cshared")
+	tmpdir, err := ioutil.TempDir("", "cshared")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -718,14 +719,14 @@ func TestCachedInstall(t *testing.T) {
 // copyFile copies src to dst.
 func copyFile(t *testing.T, dst, src string) {
 	t.Helper()
-	data, err := os.ReadFile(src)
+	data, err := ioutil.ReadFile(src)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0777); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dst, data, 0666); err != nil {
+	if err := ioutil.WriteFile(dst, data, 0666); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -742,7 +743,7 @@ func TestGo2C2Go(t *testing.T) {
 
 	t.Parallel()
 
-	tmpdir, err := os.MkdirTemp("", "cshared-TestGo2C2Go")
+	tmpdir, err := ioutil.TempDir("", "cshared-TestGo2C2Go")
 	if err != nil {
 		t.Fatal(err)
 	}

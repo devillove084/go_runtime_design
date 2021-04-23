@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || linux || netbsd || openbsd || solaris
 // +build aix darwin dragonfly freebsd linux netbsd openbsd solaris
 
 // Fork, exec, wait, etc.
@@ -301,7 +300,7 @@ func Exec(argv0 string, argv []string, envv []string) (err error) {
 	} else if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
 		// Similarly on Darwin.
 		err1 = execveDarwin(argv0p, &argvp[0], &envvp[0])
-	} else if runtime.GOOS == "openbsd" && (runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64") {
+	} else if runtime.GOOS == "openbsd" && runtime.GOARCH == "amd64" {
 		// Similarly on OpenBSD.
 		err1 = execveOpenBSD(argv0p, &argvp[0], &envvp[0])
 	} else {

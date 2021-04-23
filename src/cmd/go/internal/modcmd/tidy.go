@@ -63,11 +63,13 @@ func runTidy(ctx context.Context, cmd *base.Command, args []string) {
 
 	modload.LoadPackages(ctx, modload.PackageOpts{
 		Tags:                     imports.AnyTags(),
-		Tidy:                     true,
-		VendorModulesInGOROOTSrc: true,
 		ResolveMissingImports:    true,
 		LoadTests:                true,
 		AllowErrors:              tidyE,
 		SilenceMissingStdImports: true,
 	}, "all")
+
+	modload.TidyBuildList()
+	modload.TrimGoSum()
+	modload.WriteGoMod()
 }

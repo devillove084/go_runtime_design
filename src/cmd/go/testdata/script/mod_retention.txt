@@ -64,7 +64,7 @@ cmp go.mod go.mod.tidy
 # However, that should not remove other redundant requirements.
 cp go.mod.nogo go.mod
 go list -mod=mod all
-cmpenv go.mod go.mod.addedgo
+cmpenv go.mod go.mod.currentgo
 
 
 -- go.mod.tidy --
@@ -133,10 +133,10 @@ require (
 	rsc.io/sampler v1.3.0 // indirect
 	rsc.io/testonly v1.0.0 // indirect
 )
--- go.mod.addedgo --
+-- go.mod.currentgo --
 module m
 
-go 1.16
+go $goversion
 
 require (
 	rsc.io/quote v1.5.2

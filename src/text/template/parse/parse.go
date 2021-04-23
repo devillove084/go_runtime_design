@@ -38,8 +38,7 @@ type Tree struct {
 type Mode uint
 
 const (
-	ParseComments  Mode = 1 << iota // parse comments and add them to AST
-	DeferFuncCheck                  // defer type checking functions until template is executed
+	ParseComments Mode = 1 << iota // parse comments and add them to AST
 )
 
 // Copy returns a copy of the Tree. Any parsing state is discarded.
@@ -690,8 +689,7 @@ func (t *Tree) operand() Node {
 func (t *Tree) term() Node {
 	switch token := t.nextNonSpace(); token.typ {
 	case itemIdentifier:
-		checkFunc := t.Mode&DeferFuncCheck == 0
-		if checkFunc && !t.hasFunction(token.val) {
+		if !t.hasFunction(token.val) {
 			t.errorf("function %q not defined", token.val)
 		}
 		return NewIdentifier(token.val).SetTree(t).SetPos(token.pos)

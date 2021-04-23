@@ -617,7 +617,11 @@ func TestReaddirNValues(t *testing.T) {
 	if testing.Short() {
 		t.Skip("test.short; skipping")
 	}
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("", "")
+	if err != nil {
+		t.Fatalf("TempDir: %v", err)
+	}
+	defer RemoveAll(dir)
 	for i := 1; i <= 105; i++ {
 		f, err := Create(filepath.Join(dir, fmt.Sprintf("%d", i)))
 		if err != nil {
@@ -712,7 +716,11 @@ func TestReaddirStatFailures(t *testing.T) {
 		// testing it wouldn't work.
 		t.Skipf("skipping test on %v", runtime.GOOS)
 	}
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("", "")
+	if err != nil {
+		t.Fatalf("TempDir: %v", err)
+	}
+	defer RemoveAll(dir)
 	touch(t, filepath.Join(dir, "good1"))
 	touch(t, filepath.Join(dir, "x")) // will disappear or have an error
 	touch(t, filepath.Join(dir, "good2"))
@@ -1941,16 +1949,22 @@ func TestAppend(t *testing.T) {
 
 func TestStatDirWithTrailingSlash(t *testing.T) {
 	// Create new temporary directory and arrange to clean it up.
-	path := t.TempDir()
+	path, err := os.MkdirTemp("", "_TestStatDirWithSlash_")
+	if err != nil {
+		t.Fatalf("TempDir: %s", err)
+	}
+	defer RemoveAll(path)
 
 	// Stat of path should succeed.
-	if _, err := Stat(path); err != nil {
+	_, err = Stat(path)
+	if err != nil {
 		t.Fatalf("stat %s failed: %s", path, err)
 	}
 
 	// Stat of path+"/" should succeed too.
 	path += "/"
-	if _, err := Stat(path); err != nil {
+	_, err = Stat(path)
+	if err != nil {
 		t.Fatalf("stat %s failed: %s", path, err)
 	}
 }
@@ -2077,7 +2091,12 @@ func TestLargeWriteToConsole(t *testing.T) {
 func TestStatDirModeExec(t *testing.T) {
 	const mode = 0111
 
-	path := t.TempDir()
+	path, err := os.MkdirTemp("", "go-build")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer RemoveAll(path)
+
 	if err := Chmod(path, 0777); err != nil {
 		t.Fatalf("Chmod %q 0777: %v", path, err)
 	}
@@ -2141,7 +2160,12 @@ func TestStatStdin(t *testing.T) {
 func TestStatRelativeSymlink(t *testing.T) {
 	testenv.MustHaveSymlink(t)
 
-	tmpdir := t.TempDir()
+	tmpdir, err := os.MkdirTemp("", "TestStatRelativeSymlink")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer RemoveAll(tmpdir)
+
 	target := filepath.Join(tmpdir, "target")
 	f, err := Create(target)
 	if err != nil {
@@ -2747,23 +2771,5 @@ func TestReadFileProc(t *testing.T) {
 	}
 	if len(data) == 0 || data[len(data)-1] != '\n' {
 		t.Fatalf("read %s: not newline-terminated: %q", name, data)
-	}
-}
-
-func TestWriteStringAlloc(t *testing.T) {
-	if runtime.GOOS == "js" {
-		t.Skip("js allocates a lot during File.WriteString")
-	}
-	d := t.TempDir()
-	f, err := Create(filepath.Join(d, "whiteboard.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	allocs := testing.AllocsPerRun(100, func() {
-		f.WriteString("I will not allocate when passed a string longer than 32 bytes.\n")
-	})
-	if allocs != 0 {
-		t.Errorf("expected 0 allocs for File.WriteString, got %v", allocs)
 	}
 }

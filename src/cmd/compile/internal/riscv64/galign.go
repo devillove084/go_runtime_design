@@ -5,11 +5,11 @@
 package riscv64
 
 import (
-	"cmd/compile/internal/ssagen"
+	"cmd/compile/internal/gc"
 	"cmd/internal/obj/riscv"
 )
 
-func Init(arch *ssagen.ArchInfo) {
+func Init(arch *gc.Arch) {
 	arch.LinkArch = &riscv.LinkRISCV64
 
 	arch.REGSP = riscv.REG_SP

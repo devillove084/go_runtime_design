@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build !amd64 && !arm64
 // +build !amd64,!arm64
 
 package elliptic
@@ -327,7 +326,7 @@ func p256ReduceDegree(out *[p256Limbs]uint32, tmp [17]uint64) {
 	var tmp2 [18]uint32
 	var carry, x, xMask uint32
 
-	// tmp contains 64-bit words with the same 29,28,29-bit positions as a
+	// tmp contains 64-bit words with the same 29,28,29-bit positions as an
 	// field element. So the top of an element of tmp might overlap with
 	// another element two positions down. The following loop eliminates
 	// this overlap.

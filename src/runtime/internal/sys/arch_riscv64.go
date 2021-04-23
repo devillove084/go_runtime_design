@@ -5,9 +5,14 @@
 package sys
 
 const (
-	_ArchFamily          = RISCV64
-	_DefaultPhysPageSize = 4096
-	_PCQuantum           = 4
-	_MinFrameSize        = 8
-	_StackAlign          = PtrSize
+	ArchFamily          = RISCV64
+	BigEndian           = false
+	CacheLineSize       = 64
+	DefaultPhysPageSize = 4096
+	PCQuantum           = 4
+	Int64Align          = 8
+	HugePageSize        = 1 << 21
+	MinFrameSize        = 8
 )
+
+type Uintreg uint64

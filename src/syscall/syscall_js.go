@@ -2,13 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build js && wasm
 // +build js,wasm
 
 package syscall
 
 import (
-	"internal/itoa"
 	"internal/oserror"
 	"sync"
 	"unsafe"
@@ -61,7 +59,7 @@ func (e Errno) Error() string {
 			return s
 		}
 	}
-	return "errno " + itoa.Itoa(int(e))
+	return "errno " + itoa(int(e))
 }
 
 func (e Errno) Is(target error) bool {
@@ -107,7 +105,7 @@ func (s Signal) String() string {
 			return str
 		}
 	}
-	return "signal " + itoa.Itoa(int(s))
+	return "signal " + itoa(int(s))
 }
 
 var signals = [...]string{}

@@ -8,7 +8,6 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
-	"internal/buildcfg"
 	"log"
 	"os"
 
@@ -19,14 +18,14 @@ import (
 
 	"cmd/internal/bio"
 	"cmd/internal/obj"
+	"cmd/internal/objabi"
 )
 
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("asm: ")
 
-	buildcfg.Check()
-	GOARCH := buildcfg.GOARCH
+	GOARCH := objabi.GOARCH
 
 	architecture := arch.Set(GOARCH)
 	if architecture == nil {
@@ -37,7 +36,6 @@ func main() {
 
 	ctxt := obj.Linknew(architecture.LinkArch)
 	ctxt.Debugasm = flags.PrintOut
-	ctxt.Debugvlog = flags.DebugV
 	ctxt.Flag_dynlink = *flags.Dynlink
 	ctxt.Flag_linkshared = *flags.Linkshared
 	ctxt.Flag_shared = *flags.Shared || *flags.Dynlink
@@ -69,7 +67,7 @@ func main() {
 	defer buf.Close()
 
 	if !*flags.SymABIs {
-		fmt.Fprintf(buf, "go object %s %s %s\n", buildcfg.GOOS, buildcfg.GOARCH, buildcfg.Version)
+		fmt.Fprintf(buf, "go object %s %s %s\n", objabi.GOOS, objabi.GOARCH, objabi.Version)
 		fmt.Fprintf(buf, "!\n")
 	}
 

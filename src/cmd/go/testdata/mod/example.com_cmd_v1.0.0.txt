@@ -16,15 +16,11 @@ go 1.16
 -- a/a.go --
 package main
 
-import "fmt"
-
-func main() { fmt.Println("a@v1.0.0") }
+func main() {}
 -- b/b.go --
 package main
 
-import "fmt"
-
-func main() { fmt.Println("b@v1.0.0") }
+func main() {}
 -- err/err.go --
 package err
 

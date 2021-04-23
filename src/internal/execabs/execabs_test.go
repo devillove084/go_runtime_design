@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"internal/testenv"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,8 +42,8 @@ func TestCommand(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			executable += ".exe"
 		}
-		if err := os.WriteFile(filepath.Join(tmpDir, executable), []byte{1, 2, 3}, 0111); err != nil {
-			t.Fatalf("os.WriteFile failed: %s", err)
+		if err := ioutil.WriteFile(filepath.Join(tmpDir, executable), []byte{1, 2, 3}, 0111); err != nil {
+			t.Fatalf("ioutil.WriteFile failed: %s", err)
 		}
 		cwd, err := os.Getwd()
 		if err != nil {
@@ -76,8 +77,8 @@ func TestLookPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		executable += ".exe"
 	}
-	if err := os.WriteFile(filepath.Join(tmpDir, executable), []byte{1, 2, 3}, 0111); err != nil {
-		t.Fatalf("os.WriteFile failed: %s", err)
+	if err := ioutil.WriteFile(filepath.Join(tmpDir, executable), []byte{1, 2, 3}, 0111); err != nil {
+		t.Fatalf("ioutil.WriteFile failed: %s", err)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {

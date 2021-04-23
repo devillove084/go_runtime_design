@@ -10,7 +10,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"internal/buildcfg"
 	"log"
 	"os"
 	"path/filepath"
@@ -142,11 +141,6 @@ func main() {
 
 	if fi, err := os.Stat(cfg.GOROOT); err != nil || !fi.IsDir() {
 		fmt.Fprintf(os.Stderr, "go: cannot find GOROOT directory: %v\n", cfg.GOROOT)
-		os.Exit(2)
-	}
-
-	if err := buildcfg.Error; err != nil {
-		fmt.Fprintf(os.Stderr, "go: %v\n", buildcfg.Error)
 		os.Exit(2)
 	}
 

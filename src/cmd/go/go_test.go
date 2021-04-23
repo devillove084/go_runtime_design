@@ -811,10 +811,8 @@ func TestNewReleaseRebuildsStalePackagesInGOPATH(t *testing.T) {
 	// so that we can change files.
 	for _, copydir := range []string{
 		"src/runtime",
-		"src/internal/abi",
 		"src/internal/bytealg",
 		"src/internal/cpu",
-		"src/internal/goexperiment",
 		"src/math/bits",
 		"src/unsafe",
 		filepath.Join("pkg", runtime.GOOS+"_"+runtime.GOARCH),

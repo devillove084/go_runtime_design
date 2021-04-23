@@ -909,7 +909,7 @@ func (p *Package) rewriteCall(f *File, call *Call) (string, bool) {
 	var sbCheck bytes.Buffer
 	for i, param := range params {
 		origArg := args[i]
-		arg, nu := p.mangle(f, &args[i], true)
+		arg, nu := p.mangle(f, &args[i])
 		if nu {
 			needsUnsafe = true
 		}
@@ -952,7 +952,7 @@ func (p *Package) rewriteCall(f *File, call *Call) (string, bool) {
 		sb.WriteString("return ")
 	}
 
-	m, nu := p.mangle(f, &call.Call.Fun, false)
+	m, nu := p.mangle(f, &call.Call.Fun)
 	if nu {
 		needsUnsafe = true
 	}
@@ -1086,8 +1086,7 @@ func (p *Package) hasPointer(f *File, t ast.Expr, top bool) bool {
 // rewriting calls when it finds them.
 // It removes the corresponding references in f.Ref and f.Calls, so that we
 // don't try to do the replacement again in rewriteRef or rewriteCall.
-// If addPosition is true, add position info to the idents of C names in arg.
-func (p *Package) mangle(f *File, arg *ast.Expr, addPosition bool) (ast.Expr, bool) {
+func (p *Package) mangle(f *File, arg *ast.Expr) (ast.Expr, bool) {
 	needsUnsafe := false
 	f.walk(arg, ctxExpr, func(f *File, arg interface{}, context astContext) {
 		px, ok := arg.(*ast.Expr)
@@ -1102,7 +1101,7 @@ func (p *Package) mangle(f *File, arg *ast.Expr, addPosition bool) (ast.Expr, bo
 
 			for _, r := range f.Ref {
 				if r.Expr == px {
-					*px = p.rewriteName(f, r, addPosition)
+					*px = p.rewriteName(f, r)
 					r.Done = true
 					break
 				}
@@ -1362,7 +1361,7 @@ func (p *Package) rewriteRef(f *File) {
 			}
 		}
 
-		expr := p.rewriteName(f, r, false)
+		expr := p.rewriteName(f, r)
 
 		if *godefs {
 			// Substitute definition for mangled type name.
@@ -1425,23 +1424,8 @@ func (p *Package) rewriteRef(f *File) {
 }
 
 // rewriteName returns the expression used to rewrite a reference.
-// If addPosition is true, add position info in the ident name.
-func (p *Package) rewriteName(f *File, r *Ref, addPosition bool) ast.Expr {
-	getNewIdent := ast.NewIdent
-	if addPosition {
-		getNewIdent = func(newName string) *ast.Ident {
-			mangledIdent := ast.NewIdent(newName)
-			if len(newName) == len(r.Name.Go) {
-				return mangledIdent
-			}
-			p := fset.Position((*r.Expr).End())
-			if p.Column == 0 {
-				return mangledIdent
-			}
-			return ast.NewIdent(fmt.Sprintf("%s /*line :%d:%d*/", newName, p.Line, p.Column))
-		}
-	}
-	var expr ast.Expr = getNewIdent(r.Name.Mangle) // default
+func (p *Package) rewriteName(f *File, r *Ref) ast.Expr {
+	var expr ast.Expr = ast.NewIdent(r.Name.Mangle) // default
 	switch r.Context {
 	case ctxCall, ctxCall2:
 		if r.Name.Kind != "func" {
@@ -1469,7 +1453,7 @@ func (p *Package) rewriteName(f *File, r *Ref, addPosition bool) ast.Expr {
 				n.Mangle = "_C2func_" + n.Go
 				f.Name["2"+r.Name.Go] = n
 			}
-			expr = getNewIdent(n.Mangle)
+			expr = ast.NewIdent(n.Mangle)
 			r.Name = n
 			break
 		}
@@ -1500,7 +1484,7 @@ func (p *Package) rewriteName(f *File, r *Ref, addPosition bool) ast.Expr {
 			// issue 7757.
 			expr = &ast.CallExpr{
 				Fun:  &ast.Ident{NamePos: (*r.Expr).Pos(), Name: "_Cgo_ptr"},
-				Args: []ast.Expr{getNewIdent(name.Mangle)},
+				Args: []ast.Expr{ast.NewIdent(name.Mangle)},
 			}
 		case "type":
 			// Okay - might be new(T)
@@ -1582,17 +1566,9 @@ func (p *Package) gccMachine() []string {
 	case "s390x":
 		return []string{"-m64"}
 	case "mips64", "mips64le":
-		if gomips64 == "hardfloat" {
-			return []string{"-mabi=64", "-mhard-float"}
-		} else if gomips64 == "softfloat" {
-			return []string{"-mabi=64", "-msoft-float"}
-		}
+		return []string{"-mabi=64"}
 	case "mips", "mipsle":
-		if gomips == "hardfloat" {
-			return []string{"-mabi=32", "-mfp32", "-mhard-float", "-mno-odd-spreg"}
-		} else if gomips == "softfloat" {
-			return []string{"-mabi=32", "-msoft-float"}
-		}
+		return []string{"-mabi=32"}
 	}
 	return nil
 }

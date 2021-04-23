@@ -5,7 +5,6 @@
 // js/wasm uses fake networking directly implemented in the net package.
 // This file only exists to make the compiler happy.
 
-//go:build js && wasm
 // +build js,wasm
 
 package syscall

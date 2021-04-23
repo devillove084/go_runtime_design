@@ -5,9 +5,12 @@
 package sys
 
 const (
-	_ArchFamily          = MIPS
-	_DefaultPhysPageSize = 65536
-	_PCQuantum           = 4
-	_MinFrameSize        = 4
-	_StackAlign          = PtrSize
+	ArchFamily          = MIPS
+	BigEndian           = true
+	DefaultPhysPageSize = 65536
+	PCQuantum           = 4
+	Int64Align          = 4
+	MinFrameSize        = 4
 )
+
+type Uintreg uint32

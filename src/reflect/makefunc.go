@@ -7,7 +7,6 @@
 package reflect
 
 import (
-	"internal/abi"
 	"unsafe"
 )
 
@@ -17,9 +16,11 @@ import (
 // methodValue and runtime.reflectMethodValue.
 // Any changes should be reflected in all three.
 type makeFuncImpl struct {
-	makeFuncCtxt
-	ftyp *funcType
-	fn   func([]Value) []Value
+	code   uintptr
+	stack  *bitVector // ptrmap for both args and results
+	argLen uintptr    // just args
+	ftyp   *funcType
+	fn     func([]Value) []Value
 }
 
 // MakeFunc returns a new function of the given Type
@@ -59,18 +60,9 @@ func MakeFunc(typ Type, fn func(args []Value) (results []Value)) Value {
 	code := **(**uintptr)(unsafe.Pointer(&dummy))
 
 	// makeFuncImpl contains a stack map for use by the runtime
-	_, _, abi := funcLayout(ftyp, nil)
+	_, argLen, _, stack, _ := funcLayout(ftyp, nil)
 
-	impl := &makeFuncImpl{
-		makeFuncCtxt: makeFuncCtxt{
-			fn:      code,
-			stack:   abi.stackPtrs,
-			argLen:  abi.stackCallArgsSize,
-			regPtrs: abi.inRegPtrs,
-		},
-		ftyp: ftyp,
-		fn:   fn,
-	}
+	impl := &makeFuncImpl{code: code, stack: stack, argLen: argLen, ftyp: ftyp, fn: fn}
 
 	return Value{t, unsafe.Pointer(impl), flag(Func)}
 }
@@ -86,7 +78,9 @@ func makeFuncStub()
 // makeFuncImpl and runtime.reflectMethodValue.
 // Any changes should be reflected in all three.
 type methodValue struct {
-	makeFuncCtxt
+	fn     uintptr
+	stack  *bitVector // ptrmap for both args and results
+	argLen uintptr    // just args
 	method int
 	rcvr   Value
 }
@@ -118,14 +112,12 @@ func makeMethodValue(op string, v Value) Value {
 	code := **(**uintptr)(unsafe.Pointer(&dummy))
 
 	// methodValue contains a stack map for use by the runtime
-	_, _, abi := funcLayout(ftyp, nil)
+	_, argLen, _, stack, _ := funcLayout(ftyp, nil)
+
 	fv := &methodValue{
-		makeFuncCtxt: makeFuncCtxt{
-			fn:      code,
-			stack:   abi.stackPtrs,
-			argLen:  abi.stackCallArgsSize,
-			regPtrs: abi.inRegPtrs,
-		},
+		fn:     code,
+		stack:  stack,
+		argLen: argLen,
 		method: int(v.flag) >> flagMethodShift,
 		rcvr:   rcvr,
 	}
@@ -144,37 +136,3 @@ func makeMethodValue(op string, v Value) Value {
 // where ctxt is the context register and frame is a pointer to the first
 // word in the passed-in argument frame.
 func methodValueCall()
-
-// This structure must be kept in sync with runtime.reflectMethodValue.
-// Any changes should be reflected in all both.
-type makeFuncCtxt struct {
-	fn      uintptr
-	stack   *bitVector // ptrmap for both stack args and results
-	argLen  uintptr    // just args
-	regPtrs abi.IntArgRegBitmap
-}
-
-// moveMakeFuncArgPtrs uses ctxt.regPtrs to copy integer pointer arguments
-// in args.Ints to args.Ptrs where the GC can see them.
-//
-// This is similar to what reflectcallmove does in the runtime, except
-// that happens on the return path, whereas this happens on the call path.
-//
-// nosplit because pointers are being held in uintptr slots in args, so
-// having our stack scanned now could lead to accidentally freeing
-// memory.
-//go:nosplit
-func moveMakeFuncArgPtrs(ctxt *makeFuncCtxt, args *abi.RegArgs) {
-	for i, arg := range args.Ints {
-		// Avoid write barriers! Because our write barrier enqueues what
-		// was there before, we might enqueue garbage.
-		if ctxt.regPtrs.Get(i) {
-			*(*uintptr)(unsafe.Pointer(&args.Ptrs[i])) = arg
-		} else {
-			// We *must* zero this space ourselves because it's defined in
-			// assembly code and the GC will scan these pointers. Otherwise,
-			// there will be garbage here.
-			*(*uintptr)(unsafe.Pointer(&args.Ptrs[i])) = 0
-		}
-	}
-}

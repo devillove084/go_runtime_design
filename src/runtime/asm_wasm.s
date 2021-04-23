@@ -7,7 +7,7 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-TEXT runtime·rt0_go(SB), NOSPLIT|NOFRAME|TOPFRAME, $0
+TEXT runtime·rt0_go(SB), NOSPLIT|NOFRAME, $0
 	// save m->g0 = g0
 	MOVD $runtime·g0(SB), runtime·m0+m_g0(SB)
 	// save m0 to g0->m
@@ -24,10 +24,6 @@ TEXT runtime·rt0_go(SB), NOSPLIT|NOFRAME|TOPFRAME, $0
 	CALL runtime·mstart(SB) // WebAssembly stack will unwind when switching to another goroutine
 	UNDEF
 
-TEXT runtime·mstart(SB),NOSPLIT|TOPFRAME,$0
-	CALL	runtime·mstart0(SB)
-	RET // not reached
-
 DATA  runtime·mainPC+0(SB)/8,$runtime·main(SB)
 GLOBL runtime·mainPC(SB),RODATA,$8
 
@@ -38,9 +34,7 @@ TEXT ·checkASM(SB), NOSPLIT, $0-1
 
 TEXT runtime·gogo(SB), NOSPLIT, $0-8
 	MOVD buf+0(FP), R0
-	MOVD gobuf_g(R0), R1
-	MOVD 0(R1), R2	// make sure g != nil
-	MOVD R1, g
+	MOVD gobuf_g(R0), g
 	MOVD gobuf_sp(R0), SP
 
 	// Put target PC at -8(SP), wasm_pc_f_loop will pick it up
@@ -75,6 +69,7 @@ TEXT runtime·mcall(SB), NOSPLIT, $0-8
 	// save state in g->sched
 	MOVD 0(SP), g_sched+gobuf_pc(g)     // caller's PC
 	MOVD $fn+0(FP), g_sched+gobuf_sp(g) // caller's SP
+	MOVD g, g_sched+gobuf_g(g)
 
 	// if g == g0 call badmcall
 	Get g
@@ -148,6 +143,7 @@ TEXT runtime·systemstack(SB), NOSPLIT, $0-8
 	MOVD $runtime·systemstack_switch(SB), g_sched+gobuf_pc(g)
 
 	MOVD SP, g_sched+gobuf_sp(g)
+	MOVD g, g_sched+gobuf_g(g)
 
 	// switch to g0
 	MOVD R2, g
@@ -274,6 +270,7 @@ TEXT runtime·morestack(SB), NOSPLIT, $0-0
 
 	// Set g->sched to context in f.
 	MOVD 0(SP), g_sched+gobuf_pc(g)
+	MOVD g, g_sched+gobuf_g(g)
 	MOVD $8(SP), g_sched+gobuf_sp(g) // f's SP
 	MOVD CTXT, g_sched+gobuf_ctxt(g)
 
@@ -299,14 +296,14 @@ TEXT ·asmcgocall(SB), NOSPLIT, $0-0
 		JMP NAME(SB); \
 	End
 
-TEXT ·reflectcall(SB), NOSPLIT, $0-48
+TEXT ·reflectcall(SB), NOSPLIT, $0-32
 	I64Load fn+8(FP)
 	I64Eqz
 	If
 		CALLNORESUME runtime·sigpanic<ABIInternal>(SB)
 	End
 
-	MOVW frameSize+32(FP), R0
+	MOVW argsize+24(FP), R0
 
 	DISPATCH(runtime·call16, 16)
 	DISPATCH(runtime·call32, 32)
@@ -338,18 +335,18 @@ TEXT ·reflectcall(SB), NOSPLIT, $0-48
 	JMP runtime·badreflectcall(SB)
 
 #define CALLFN(NAME, MAXSIZE) \
-TEXT NAME(SB), WRAPPER, $MAXSIZE-48; \
+TEXT NAME(SB), WRAPPER, $MAXSIZE-32; \
 	NO_LOCAL_POINTERS; \
-	MOVW stackArgsSize+24(FP), R0; \
+	MOVW argsize+24(FP), R0; \
 	\
 	Get R0; \
 	I64Eqz; \
 	Not; \
 	If; \
 		Get SP; \
-		I64Load stackArgs+16(FP); \
+		I64Load argptr+16(FP); \
 		I32WrapI64; \
-		I64Load stackArgsSize+24(FP); \
+		I64Load argsize+24(FP); \
 		I64Const $3; \
 		I64ShrU; \
 		I32WrapI64; \
@@ -362,12 +359,12 @@ TEXT NAME(SB), WRAPPER, $MAXSIZE-48; \
 	I64Load $0; \
 	CALL; \
 	\
-	I64Load32U stackRetOffset+28(FP); \
+	I64Load32U retoffset+28(FP); \
 	Set R0; \
 	\
-	MOVD stackArgsType+0(FP), RET0; \
+	MOVD argtype+0(FP), RET0; \
 	\
-	I64Load stackArgs+16(FP); \
+	I64Load argptr+16(FP); \
 	Get R0; \
 	I64Add; \
 	Set RET1; \
@@ -378,7 +375,7 @@ TEXT NAME(SB), WRAPPER, $MAXSIZE-48; \
 	I64Add; \
 	Set RET2; \
 	\
-	I64Load32U stackArgsSize+24(FP); \
+	I64Load32U argsize+24(FP); \
 	Get R0; \
 	I64Sub; \
 	Set RET3; \
@@ -390,13 +387,12 @@ TEXT NAME(SB), WRAPPER, $MAXSIZE-48; \
 // separate function so it can allocate stack space for the arguments
 // to reflectcallmove. It does not follow the Go ABI; it expects its
 // arguments in registers.
-TEXT callRet<>(SB), NOSPLIT, $40-0
+TEXT callRet<>(SB), NOSPLIT, $32-0
 	NO_LOCAL_POINTERS
 	MOVD RET0, 0(SP)
 	MOVD RET1, 8(SP)
 	MOVD RET2, 16(SP)
 	MOVD RET3, 24(SP)
-	MOVD $0,   32(SP)
 	CALL runtime·reflectcallmove(SB)
 	RET
 
@@ -428,7 +424,7 @@ CALLFN(·call268435456, 268435456)
 CALLFN(·call536870912, 536870912)
 CALLFN(·call1073741824, 1073741824)
 
-TEXT runtime·goexit(SB), NOSPLIT|TOPFRAME, $0-0
+TEXT runtime·goexit(SB), NOSPLIT, $0-0
 	NOP // first PC of goexit is skipped
 	CALL runtime·goexit1(SB) // does not return
 	UNDEF

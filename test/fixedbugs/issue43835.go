@@ -13,9 +13,6 @@ func main() {
 	if bad, _ := g(); bad {
 		panic("FAIL")
 	}
-	if bad, _ := h(); bad {
-		panic("FAIL")
-	}
 }
 
 func f() (bad bool) {
@@ -28,15 +25,6 @@ func f() (bad bool) {
 }
 
 func g() (bool, int) {
-	defer func() {
-		recover()
-	}()
-	var p *int
-	return true, *p
-}
-
-
-func h() (_ bool, _ int) {
 	defer func() {
 		recover()
 	}()

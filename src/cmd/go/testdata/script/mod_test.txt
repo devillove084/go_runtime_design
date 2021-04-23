@@ -60,8 +60,6 @@ go list -test
 -- a/go.mod.empty --
 module example.com/user/a
 
-go 1.11
-
 -- a/a.go --
 package a
 

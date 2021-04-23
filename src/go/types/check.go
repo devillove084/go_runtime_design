@@ -8,7 +8,6 @@ package types
 
 import (
 	"errors"
-	"fmt"
 	"go/ast"
 	"go/constant"
 	"go/token"
@@ -20,18 +19,18 @@ const (
 	trace = false // turn on for detailed type resolution traces
 )
 
-// If forceStrict is set, the type-checker enforces additional
+// If Strict is set, the type-checker enforces additional
 // rules not specified by the Go 1 spec, but which will
 // catch guaranteed run-time errors if the respective
 // code is executed. In other words, programs passing in
-// strict mode are Go 1 compliant, but not all Go 1 programs
-// will pass in strict mode. The additional rules are:
+// Strict mode are Go 1 compliant, but not all Go 1 programs
+// will pass in Strict mode. The additional rules are:
 //
 // - A type assertion x.(T) where T is an interface type
 //   is invalid if any (statically known) method that exists
 //   for both x and T have different signatures.
 //
-const forceStrict = false
+const strict = false
 
 // exprInfo stores information about an untyped expression.
 type exprInfo struct {
@@ -70,12 +69,6 @@ type importKey struct {
 	path, dir string
 }
 
-// A dotImportKey describes a dot-imported object in the given scope.
-type dotImportKey struct {
-	scope *Scope
-	obj   Object
-}
-
 // A Checker maintains the state of the type checker.
 // It must be created with NewChecker.
 type Checker struct {
@@ -85,25 +78,22 @@ type Checker struct {
 	fset *token.FileSet
 	pkg  *Package
 	*Info
-	version version                    // accepted language version
-	nextId  uint64                     // unique Id for type parameters (first valid Id is 1)
-	objMap  map[Object]*declInfo       // maps package-level objects and (non-interface) methods to declaration info
-	impMap  map[importKey]*Package     // maps (import path, source directory) to (complete or fake) package
-	posMap  map[*Interface][]token.Pos // maps interface types to lists of embedded interface positions
-	typMap  map[string]*Named          // maps an instantiated named type hash to a *Named type
-	pkgCnt  map[string]int             // counts number of imported packages with a given name (for better error messages)
+	objMap map[Object]*declInfo       // maps package-level objects and (non-interface) methods to declaration info
+	impMap map[importKey]*Package     // maps (import path, source directory) to (complete or fake) package
+	posMap map[*Interface][]token.Pos // maps interface types to lists of embedded interface positions
+	pkgCnt map[string]int             // counts number of imported packages with a given name (for better error messages)
 
 	// information collected during type-checking of a set of package files
 	// (initialized by Files, valid only for the duration of check.Files;
 	// maps and lists are allocated on demand)
-	files        []*ast.File               // package files
-	imports      []*PkgName                // list of imported packages
-	dotImportMap map[dotImportKey]*PkgName // maps dot-imported objects to the package they were dot-imported through
+	files            []*ast.File                             // package files
+	unusedDotImports map[*Scope]map[*Package]*ast.ImportSpec // unused dot-imported packages
 
 	firstErr error                 // first error encountered
 	methods  map[*TypeName][]*Func // maps package scope type names to associated non-blank (non-interface) methods
 	untyped  map[ast.Expr]exprInfo // map of expressions without final type
 	delayed  []func()              // stack of delayed action segments; segments are processed in FIFO order
+	finals   []func()              // list of final actions; processed at the end of type-checking the current set of files
 	objPath  []Object              // path of object dependencies during type inference (for cycle reporting)
 
 	// context within which the current object is type-checked
@@ -112,6 +102,22 @@ type Checker struct {
 
 	// debugging
 	indent int // indentation for tracing
+}
+
+// addUnusedImport adds the position of a dot-imported package
+// pkg to the map of dot imports for the given file scope.
+func (check *Checker) addUnusedDotImport(scope *Scope, pkg *Package, spec *ast.ImportSpec) {
+	mm := check.unusedDotImports
+	if mm == nil {
+		mm = make(map[*Scope]map[*Package]*ast.ImportSpec)
+		check.unusedDotImports = mm
+	}
+	m := mm[scope]
+	if m == nil {
+		m = make(map[*Package]*ast.ImportSpec)
+		mm[scope] = m
+	}
+	m[pkg] = spec
 }
 
 // addDeclDep adds the dependency edge (check.decl -> to) if check.decl exists
@@ -143,6 +149,14 @@ func (check *Checker) later(f func()) {
 	check.delayed = append(check.delayed, f)
 }
 
+// atEnd adds f to the list of actions processed at the end
+// of type-checking, before initialization order computation.
+// Actions added by atEnd are processed after any actions
+// added by later.
+func (check *Checker) atEnd(f func()) {
+	check.finals = append(check.finals, f)
+}
+
 // push pushes obj onto the object path and returns its index in the path.
 func (check *Checker) push(obj Object) int {
 	check.objPath = append(check.objPath, obj)
@@ -171,23 +185,15 @@ func NewChecker(conf *Config, fset *token.FileSet, pkg *Package, info *Info) *Ch
 		info = new(Info)
 	}
 
-	version, err := parseGoVersion(conf.GoVersion)
-	if err != nil {
-		panic(fmt.Sprintf("invalid Go version %q (%v)", conf.GoVersion, err))
-	}
-
 	return &Checker{
-		conf:    conf,
-		fset:    fset,
-		pkg:     pkg,
-		Info:    info,
-		version: version,
-		nextId:  1,
-		objMap:  make(map[Object]*declInfo),
-		impMap:  make(map[importKey]*Package),
-		posMap:  make(map[*Interface][]token.Pos),
-		typMap:  make(map[string]*Named),
-		pkgCnt:  make(map[string]int),
+		conf:   conf,
+		fset:   fset,
+		pkg:    pkg,
+		Info:   info,
+		objMap: make(map[Object]*declInfo),
+		impMap: make(map[importKey]*Package),
+		posMap: make(map[*Interface][]token.Pos),
+		pkgCnt: make(map[string]int),
 	}
 }
 
@@ -196,13 +202,13 @@ func NewChecker(conf *Config, fset *token.FileSet, pkg *Package, info *Info) *Ch
 func (check *Checker) initFiles(files []*ast.File) {
 	// start with a clean slate (check.Files may be called multiple times)
 	check.files = nil
-	check.imports = nil
-	check.dotImportMap = nil
+	check.unusedDotImports = nil
 
 	check.firstErr = nil
 	check.methods = nil
 	check.untyped = nil
 	check.delayed = nil
+	check.finals = nil
 
 	// determine package name and collect valid files
 	pkg := check.pkg
@@ -259,26 +265,17 @@ func (check *Checker) checkFiles(files []*ast.File) (err error) {
 	check.packageObjects()
 
 	check.processDelayed(0) // incl. all functions
+	check.processFinals()
 
 	check.initOrder()
 
 	if !check.conf.DisableUnusedImportCheck {
 		check.unusedImports()
 	}
-	// no longer needed - release memory
-	check.imports = nil
-	check.dotImportMap = nil
 
 	check.recordUntyped()
 
-	if check.Info != nil {
-		sanitizeInfo(check.Info)
-	}
-
 	check.pkg.complete = true
-
-	// TODO(rFindley) There's more memory we should release at this point.
-
 	return
 }
 
@@ -295,6 +292,16 @@ func (check *Checker) processDelayed(top int) {
 	}
 	assert(top <= len(check.delayed)) // stack must not have shrunk
 	check.delayed = check.delayed[:top]
+}
+
+func (check *Checker) processFinals() {
+	n := len(check.finals)
+	for _, f := range check.finals {
+		f() // must not append to check.finals
+	}
+	if len(check.finals) != n {
+		panic("internal error: final action list grew")
+	}
 }
 
 func (check *Checker) recordUntyped() {
@@ -319,9 +326,7 @@ func (check *Checker) recordTypeAndValue(x ast.Expr, mode operandMode, typ Type,
 	}
 	if mode == constant_ {
 		assert(val != nil)
-		// We check is(typ, IsConstType) here as constant expressions may be
-		// recorded as type parameters.
-		assert(typ == Typ[Invalid] || is(typ, IsConstType))
+		assert(typ == Typ[Invalid] || isConstType(typ))
 	}
 	if m := check.Types; m != nil {
 		m[x] = TypeAndValue{mode, typ, val}
@@ -329,14 +334,14 @@ func (check *Checker) recordTypeAndValue(x ast.Expr, mode operandMode, typ Type,
 }
 
 func (check *Checker) recordBuiltinType(f ast.Expr, sig *Signature) {
-	// f must be a (possibly parenthesized, possibly qualified)
-	// identifier denoting a built-in (including unsafe's non-constant
-	// functions Add and Slice): record the signature for f and possible
-	// children.
+	// f must be a (possibly parenthesized) identifier denoting a built-in
+	// (built-ins in package unsafe always produce a constant result and
+	// we don't record their signatures, so we don't see qualified idents
+	// here): record the signature for f and possible children.
 	for {
 		check.recordTypeAndValue(f, builtin, sig, nil)
 		switch p := f.(type) {
-		case *ast.Ident, *ast.SelectorExpr:
+		case *ast.Ident:
 			return // we're done
 		case *ast.ParenExpr:
 			f = p.X
@@ -369,14 +374,6 @@ func (check *Checker) recordCommaOkTypes(x ast.Expr, a [2]Type) {
 			}
 			x = p.X
 		}
-	}
-}
-
-func (check *Checker) recordInferred(call ast.Expr, targs []Type, sig *Signature) {
-	assert(call != nil)
-	assert(sig != nil)
-	if m := check._Inferred; m != nil {
-		m[call] = _Inferred{targs, sig}
 	}
 }
 

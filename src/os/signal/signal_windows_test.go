@@ -56,7 +56,11 @@ func main() {
 	}
 }
 `
-	tmp := t.TempDir()
+	tmp, err := os.MkdirTemp("", "TestCtrlBreak")
+	if err != nil {
+		t.Fatal("TempDir failed: ", err)
+	}
+	defer os.RemoveAll(tmp)
 
 	// write ctrlbreak.go
 	name := filepath.Join(tmp, "ctlbreak")

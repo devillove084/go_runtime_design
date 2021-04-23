@@ -1,4 +1,4 @@
-// errorcheck -0 -live -l
+// errorcheck -0 -live -l -d=compilelater
 
 // Copyright 2017 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style

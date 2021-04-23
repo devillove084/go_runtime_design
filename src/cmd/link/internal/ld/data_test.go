@@ -8,7 +8,6 @@ import (
 	"cmd/internal/objabi"
 	"cmd/internal/sys"
 	"cmd/link/internal/loader"
-	"internal/buildcfg"
 	"testing"
 )
 
@@ -64,14 +63,14 @@ func TestAddGotSym(t *testing.T) {
 	}
 
 	// Save the architecture as we're going to set it on each test run.
-	origArch := buildcfg.GOARCH
+	origArch := objabi.GOARCH
 	defer func() {
-		buildcfg.GOARCH = origArch
+		objabi.GOARCH = origArch
 	}()
 
 	for i, test := range tests {
 		iself := len(test.rel) != 0
-		buildcfg.GOARCH = test.arch.Name
+		objabi.GOARCH = test.arch.Name
 		ctxt := setUpContext(test.arch, iself, test.ht, test.bm, test.lm)
 		foo := ctxt.loader.CreateSymForUpdate("foo", 0)
 		ctxt.loader.CreateExtSym("bar", 0)

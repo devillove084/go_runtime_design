@@ -4,7 +4,6 @@
 
 // This file contains extra hooks for testing the go command.
 
-//go:build testgo
 // +build testgo
 
 package work

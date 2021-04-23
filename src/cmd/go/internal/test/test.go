@@ -29,7 +29,6 @@ import (
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/load"
 	"cmd/go/internal/lockedfile"
-	"cmd/go/internal/search"
 	"cmd/go/internal/str"
 	"cmd/go/internal/trace"
 	"cmd/go/internal/work"
@@ -118,8 +117,8 @@ elapsed time in the summary line.
 
 The rule for a match in the cache is that the run involves the same
 test binary and the flags on the command line come entirely from a
-restricted set of 'cacheable' test flags, defined as -benchtime, -cpu,
--list, -parallel, -run, -short, and -v. If a run of go test has any test
+restricted set of 'cacheable' test flags, defined as -cpu, -list,
+-parallel, -run, -short, and -v. If a run of go test has any test
 or non-test flags outside this set, the result is not cached. To
 disable test caching, use any test flag or argument other than the
 cacheable flags. The idiomatic way to disable test caching explicitly
@@ -569,6 +568,8 @@ var defaultVetFlags = []string{
 }
 
 func runTest(ctx context.Context, cmd *base.Command, args []string) {
+	load.ModResolveTests = true
+
 	pkgArgs, testArgs = testFlags(args)
 
 	if cfg.DebugTrace != "" {
@@ -594,8 +595,7 @@ func runTest(ctx context.Context, cmd *base.Command, args []string) {
 	work.VetFlags = testVet.flags
 	work.VetExplicit = testVet.explicit
 
-	pkgOpts := load.PackageOpts{ModResolveTests: true}
-	pkgs = load.PackagesAndErrors(ctx, pkgOpts, pkgArgs)
+	pkgs = load.PackagesAndErrors(ctx, pkgArgs)
 	load.CheckPackageErrors(pkgs)
 	if len(pkgs) == 0 {
 		base.Fatalf("no packages to test")
@@ -679,7 +679,7 @@ func runTest(ctx context.Context, cmd *base.Command, args []string) {
 		sort.Strings(all)
 
 		a := &work.Action{Mode: "go test -i"}
-		pkgs := load.PackagesAndErrors(ctx, pkgOpts, all)
+		pkgs := load.PackagesAndErrors(ctx, all)
 		load.CheckPackageErrors(pkgs)
 		for _, p := range pkgs {
 			if cfg.BuildToolchainName == "gccgo" && p.Standard {
@@ -706,19 +706,13 @@ func runTest(ctx context.Context, cmd *base.Command, args []string) {
 		}
 
 		// Select for coverage all dependencies matching the testCoverPaths patterns.
-		for _, p := range load.TestPackageList(ctx, pkgOpts, pkgs) {
+		for _, p := range load.TestPackageList(ctx, pkgs) {
 			haveMatch := false
 			for i := range testCoverPaths {
 				if match[i](p) {
 					matched[i] = true
 					haveMatch = true
 				}
-			}
-
-			// A package which only has test files can't be imported
-			// as a dependency, nor can it be instrumented for coverage.
-			if len(p.GoFiles)+len(p.CgoFiles) == 0 {
-				continue
 			}
 
 			// Silently ignore attempts to run coverage on
@@ -774,7 +768,7 @@ func runTest(ctx context.Context, cmd *base.Command, args []string) {
 			ensureImport(p, "sync/atomic")
 		}
 
-		buildTest, runTest, printTest, err := builderTest(&b, ctx, pkgOpts, p)
+		buildTest, runTest, printTest, err := builderTest(&b, ctx, p)
 		if err != nil {
 			str := err.Error()
 			str = strings.TrimPrefix(str, "\n")
@@ -841,7 +835,7 @@ var windowsBadWords = []string{
 	"update",
 }
 
-func builderTest(b *work.Builder, ctx context.Context, pkgOpts load.PackageOpts, p *load.Package) (buildAction, runAction, printAction *work.Action, err error) {
+func builderTest(b *work.Builder, ctx context.Context, p *load.Package) (buildAction, runAction, printAction *work.Action, err error) {
 	if len(p.TestGoFiles)+len(p.XTestGoFiles) == 0 {
 		build := b.CompileAction(work.ModeBuild, work.ModeBuild, p)
 		run := &work.Action{Mode: "test run", Package: p, Deps: []*work.Action{build}}
@@ -864,7 +858,7 @@ func builderTest(b *work.Builder, ctx context.Context, pkgOpts load.PackageOpts,
 			DeclVars: declareCoverVars,
 		}
 	}
-	pmain, ptest, pxtest, err := load.TestPackagesFor(ctx, pkgOpts, p, cover)
+	pmain, ptest, pxtest, err := load.TestPackagesFor(ctx, p, cover)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1332,8 +1326,7 @@ func (c *runCache) tryCacheWithID(b *work.Builder, a *work.Action, id string) bo
 			return false
 		}
 		switch arg[:i] {
-		case "-test.benchtime",
-			"-test.cpu",
+		case "-test.cpu",
 			"-test.list",
 			"-test.parallel",
 			"-test.run",
@@ -1506,7 +1499,7 @@ func computeTestInputsID(a *work.Action, testlog []byte) (cache.ActionID, error)
 			if !filepath.IsAbs(name) {
 				name = filepath.Join(pwd, name)
 			}
-			if a.Package.Root == "" || search.InDir(name, a.Package.Root) == "" {
+			if a.Package.Root == "" || !inDir(name, a.Package.Root) {
 				// Do not recheck files outside the module, GOPATH, or GOROOT root.
 				break
 			}
@@ -1515,7 +1508,7 @@ func computeTestInputsID(a *work.Action, testlog []byte) (cache.ActionID, error)
 			if !filepath.IsAbs(name) {
 				name = filepath.Join(pwd, name)
 			}
-			if a.Package.Root == "" || search.InDir(name, a.Package.Root) == "" {
+			if a.Package.Root == "" || !inDir(name, a.Package.Root) {
 				// Do not recheck files outside the module, GOPATH, or GOROOT root.
 				break
 			}
@@ -1531,6 +1524,18 @@ func computeTestInputsID(a *work.Action, testlog []byte) (cache.ActionID, error)
 	}
 	sum := h.Sum()
 	return sum, nil
+}
+
+func inDir(path, dir string) bool {
+	if str.HasFilePathPrefix(path, dir) {
+		return true
+	}
+	xpath, err1 := filepath.EvalSymlinks(path)
+	xdir, err2 := filepath.EvalSymlinks(dir)
+	if err1 == nil && err2 == nil && str.HasFilePathPrefix(xpath, xdir) {
+		return true
+	}
+	return false
 }
 
 func hashGetenv(name string) cache.ActionID {

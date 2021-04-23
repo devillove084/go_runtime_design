@@ -7,6 +7,7 @@
 package so_test
 
 import (
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -36,7 +37,7 @@ func requireTestSOSupported(t *testing.T) {
 func TestSO(t *testing.T) {
 	requireTestSOSupported(t)
 
-	GOPATH, err := os.MkdirTemp("", "cgosotest")
+	GOPATH, err := ioutil.TempDir("", "cgosotest")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,7 +47,7 @@ func TestSO(t *testing.T) {
 	if err := overlayDir(modRoot, "testdata"); err != nil {
 		log.Panic(err)
 	}
-	if err := os.WriteFile(filepath.Join(modRoot, "go.mod"), []byte("module cgosotest\n"), 0666); err != nil {
+	if err := ioutil.WriteFile(filepath.Join(modRoot, "go.mod"), []byte("module cgosotest\n"), 0666); err != nil {
 		log.Panic(err)
 	}
 

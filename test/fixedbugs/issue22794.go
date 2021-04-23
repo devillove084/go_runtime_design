@@ -17,5 +17,4 @@ func main() {
 	}
 	i2 := &it{floats: false} // ERROR "(but does have Floats)|unknown field|declared but not used"
 	_ = &it{InneR: "foo"}    // ERROR "(but does have inner)|unknown field"
-	_ = i2
 }

@@ -490,22 +490,7 @@ func (r *StackRecord) Stack() []uintptr {
 // memory profiling rate should do so just once, as early as
 // possible in the execution of the program (for example,
 // at the beginning of main).
-var MemProfileRate int = defaultMemProfileRate(512 * 1024)
-
-// defaultMemProfileRate returns 0 if disableMemoryProfiling is set.
-// It exists primarily for the godoc rendering of MemProfileRate
-// above.
-func defaultMemProfileRate(v int) int {
-	if disableMemoryProfiling {
-		return 0
-	}
-	return v
-}
-
-// disableMemoryProfiling is set by the linker if runtime.MemProfile
-// is not used and the link type guarantees nobody else could use it
-// elsewhere.
-var disableMemoryProfiling bool
+var MemProfileRate int = 512 * 1024
 
 // A MemProfileRecord describes the live objects allocated
 // by a particular call sequence (stack trace).
@@ -746,13 +731,12 @@ func goroutineProfileWithLabels(p []StackRecord, labels []unsafe.Pointer) (n int
 
 	stopTheWorld("profile")
 
-	// World is stopped, no locking required.
 	n = 1
-	forEachGRace(func(gp1 *g) {
+	for _, gp1 := range allgs {
 		if isOK(gp1) {
 			n++
 		}
-	})
+	}
 
 	if n <= len(p) {
 		ok = true
@@ -773,23 +757,21 @@ func goroutineProfileWithLabels(p []StackRecord, labels []unsafe.Pointer) (n int
 		}
 
 		// Save other goroutines.
-		forEachGRace(func(gp1 *g) {
-			if !isOK(gp1) {
-				return
+		for _, gp1 := range allgs {
+			if isOK(gp1) {
+				if len(r) == 0 {
+					// Should be impossible, but better to return a
+					// truncated profile than to crash the entire process.
+					break
+				}
+				saveg(^uintptr(0), ^uintptr(0), gp1, &r[0])
+				if labels != nil {
+					lbl[0] = gp1.labels
+					lbl = lbl[1:]
+				}
+				r = r[1:]
 			}
-
-			if len(r) == 0 {
-				// Should be impossible, but better to return a
-				// truncated profile than to crash the entire process.
-				return
-			}
-			saveg(^uintptr(0), ^uintptr(0), gp1, &r[0])
-			if labels != nil {
-				lbl[0] = gp1.labels
-				lbl = lbl[1:]
-			}
-			r = r[1:]
-		})
+		}
 	}
 
 	startTheWorld()

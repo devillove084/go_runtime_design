@@ -121,7 +121,7 @@ func FixedZone(name string, offset int) *Location {
 // the start and end times bracketing sec when that zone is in effect,
 // the offset in seconds east of UTC (such as -5*60*60), and whether
 // the daylight savings is being observed at that time.
-func (l *Location) lookup(sec int64) (name string, offset int, start, end int64, isDST bool) {
+func (l *Location) lookup(sec int64) (name string, offset int, start, end int64) {
 	l = l.get()
 
 	if len(l.zone) == 0 {
@@ -129,7 +129,6 @@ func (l *Location) lookup(sec int64) (name string, offset int, start, end int64,
 		offset = 0
 		start = alpha
 		end = omega
-		isDST = false
 		return
 	}
 
@@ -138,7 +137,6 @@ func (l *Location) lookup(sec int64) (name string, offset int, start, end int64,
 		offset = zone.offset
 		start = l.cacheStart
 		end = l.cacheEnd
-		isDST = zone.isDST
 		return
 	}
 
@@ -152,7 +150,6 @@ func (l *Location) lookup(sec int64) (name string, offset int, start, end int64,
 		} else {
 			end = omega
 		}
-		isDST = zone.isDST
 		return
 	}
 
@@ -177,13 +174,12 @@ func (l *Location) lookup(sec int64) (name string, offset int, start, end int64,
 	offset = zone.offset
 	start = tx[lo].when
 	// end = maintained during the search
-	isDST = zone.isDST
 
 	// If we're at the end of the known zone transitions,
 	// try the extend string.
 	if lo == len(tx)-1 && l.extend != "" {
-		if ename, eoffset, estart, eend, eisDST, ok := tzset(l.extend, end, sec); ok {
-			return ename, eoffset, estart, eend, eisDST
+		if ename, eoffset, estart, eend, _, ok := tzset(l.extend, end, sec); ok {
+			return ename, eoffset, estart, eend
 		}
 	}
 
@@ -596,7 +592,7 @@ func (l *Location) lookupName(name string, unix int64) (offset int, ok bool) {
 	for i := range l.zone {
 		zone := &l.zone[i]
 		if zone.name == name {
-			nam, offset, _, _, _ := l.lookup(unix - int64(zone.offset))
+			nam, offset, _, _ := l.lookup(unix - int64(zone.offset))
 			if nam == zone.name {
 				return offset, true
 			}

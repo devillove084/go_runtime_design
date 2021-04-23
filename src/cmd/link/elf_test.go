@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build dragonfly || freebsd || linux || netbsd || openbsd
 // +build dragonfly freebsd linux netbsd openbsd
 
 package main
@@ -70,7 +69,11 @@ func TestSectionsWithSameName(t *testing.T) {
 		t.Skipf("can't find objcopy: %v", err)
 	}
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "go-link-TestSectionsWithSameName")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
 
 	gopath := filepath.Join(dir, "GOPATH")
 	env := append(os.Environ(), "GOPATH="+gopath)
@@ -140,7 +143,11 @@ func TestMinusRSymsWithSameName(t *testing.T) {
 	testenv.MustHaveCGO(t)
 	t.Parallel()
 
-	dir := t.TempDir()
+	dir, err := ioutil.TempDir("", "go-link-TestMinusRSymsWithSameName")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
 
 	gopath := filepath.Join(dir, "GOPATH")
 	env := append(os.Environ(), "GOPATH="+gopath)
@@ -263,7 +270,11 @@ func TestPIESize(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			dir := t.TempDir()
+			dir, err := ioutil.TempDir("", "go-link-"+name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer os.RemoveAll(dir)
 
 			writeGo(t, dir)
 

@@ -89,7 +89,7 @@ GLOBL _rt0_386_lib_argc<>(SB),NOPTR, $4
 DATA _rt0_386_lib_argv<>(SB)/4, $0
 GLOBL _rt0_386_lib_argv<>(SB),NOPTR, $4
 
-TEXT runtime·rt0_go(SB),NOSPLIT|NOFRAME|TOPFRAME,$0
+TEXT runtime·rt0_go(SB),NOSPLIT|NOFRAME,$0
 	// Copy arguments forward on an even stack.
 	// Users of this function jump to it, they don't call it.
 	MOVL	0(SP), AX
@@ -269,23 +269,35 @@ TEXT runtime·asminit(SB),NOSPLIT,$0-0
 	FLDCW	runtime·controlWord64(SB)
 	RET
 
-TEXT runtime·mstart(SB),NOSPLIT|TOPFRAME,$0
-	CALL	runtime·mstart0(SB)
-	RET // not reached
-
 /*
  *  go-routine
  */
 
+// void gosave(Gobuf*)
+// save state in Gobuf; setjmp
+TEXT runtime·gosave(SB), NOSPLIT, $0-4
+	MOVL	buf+0(FP), AX		// gobuf
+	LEAL	buf+0(FP), BX		// caller's SP
+	MOVL	BX, gobuf_sp(AX)
+	MOVL	0(SP), BX		// caller's PC
+	MOVL	BX, gobuf_pc(AX)
+	MOVL	$0, gobuf_ret(AX)
+	// Assert ctxt is zero. See func save.
+	MOVL	gobuf_ctxt(AX), BX
+	TESTL	BX, BX
+	JZ	2(PC)
+	CALL	runtime·badctxt(SB)
+	get_tls(CX)
+	MOVL	g(CX), BX
+	MOVL	BX, gobuf_g(AX)
+	RET
+
 // void gogo(Gobuf*)
 // restore state from Gobuf; longjmp
-TEXT runtime·gogo(SB), NOSPLIT, $0-4
+TEXT runtime·gogo(SB), NOSPLIT, $8-4
 	MOVL	buf+0(FP), BX		// gobuf
 	MOVL	gobuf_g(BX), DX
 	MOVL	0(DX), CX		// make sure g != nil
-	JMP	gogo<>(SB)
-
-TEXT gogo<>(SB), NOSPLIT, $0
 	get_tls(CX)
 	MOVL	DX, g(CX)
 	MOVL	gobuf_sp(BX), SP	// restore SP
@@ -310,6 +322,7 @@ TEXT runtime·mcall(SB), NOSPLIT, $0-4
 	MOVL	BX, (g_sched+gobuf_pc)(AX)
 	LEAL	fn+0(FP), BX	// caller's SP
 	MOVL	BX, (g_sched+gobuf_sp)(AX)
+	MOVL	AX, (g_sched+gobuf_g)(AX)
 
 	// switch to m->g0 & its stack, call fn
 	MOVL	g(DX), BX
@@ -358,12 +371,18 @@ TEXT runtime·systemstack(SB), NOSPLIT, $0-4
 	// switch stacks
 	// save our state in g->sched. Pretend to
 	// be systemstack_switch if the G stack is scanned.
-	CALL	gosave_systemstack_switch<>(SB)
+	MOVL	$runtime·systemstack_switch(SB), (g_sched+gobuf_pc)(AX)
+	MOVL	SP, (g_sched+gobuf_sp)(AX)
+	MOVL	AX, (g_sched+gobuf_g)(AX)
 
 	// switch to g0
 	get_tls(CX)
 	MOVL	DX, g(CX)
 	MOVL	(g_sched+gobuf_sp)(DX), BX
+	// make it look like mstart called systemstack on g0, to stop traceback
+	SUBL	$4, BX
+	MOVL	$runtime·mstart(SB), DX
+	MOVL	DX, 0(BX)
 	MOVL	BX, SP
 
 	// call target function
@@ -438,6 +457,7 @@ TEXT runtime·morestack(SB),NOSPLIT,$0-0
 	// Set g->sched to context in f.
 	MOVL	0(SP), AX	// f's PC
 	MOVL	AX, (g_sched+gobuf_pc)(SI)
+	MOVL	SI, (g_sched+gobuf_g)(SI)
 	LEAL	4(SP), AX	// f's SP
 	MOVL	AX, (g_sched+gobuf_sp)(SI)
 	MOVL	DX, (g_sched+gobuf_ctxt)(SI)
@@ -457,7 +477,7 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT,$0-0
 	JMP runtime·morestack(SB)
 
 // reflectcall: call a function with the given argument list
-// func call(stackArgsType *_type, f *FuncVal, stackArgs *byte, stackArgsSize, stackRetOffset, frameSize uint32, regArgs *abi.RegArgs).
+// func call(argtype *_type, f *FuncVal, arg *byte, argsize, retoffset uint32).
 // we don't have variable-sized frames, so we use a small number
 // of constant-sized-frame functions to encode a few bits of size in the pc.
 // Caution: ugly multiline assembly macros in your future!
@@ -469,8 +489,8 @@ TEXT runtime·morestack_noctxt(SB),NOSPLIT,$0-0
 	JMP	AX
 // Note: can't just "JMP NAME(SB)" - bad inlining results.
 
-TEXT ·reflectcall(SB), NOSPLIT, $0-28
-	MOVL	frameSize+20(FP), CX
+TEXT ·reflectcall(SB), NOSPLIT, $0-20
+	MOVL	argsize+12(FP), CX
 	DISPATCH(runtime·call16, 16)
 	DISPATCH(runtime·call32, 32)
 	DISPATCH(runtime·call64, 64)
@@ -502,11 +522,11 @@ TEXT ·reflectcall(SB), NOSPLIT, $0-28
 	JMP	AX
 
 #define CALLFN(NAME,MAXSIZE)			\
-TEXT NAME(SB), WRAPPER, $MAXSIZE-28;		\
+TEXT NAME(SB), WRAPPER, $MAXSIZE-20;		\
 	NO_LOCAL_POINTERS;			\
 	/* copy arguments to stack */		\
-	MOVL	stackArgs+8(FP), SI;		\
-	MOVL	stackArgsSize+12(FP), CX;		\
+	MOVL	argptr+8(FP), SI;		\
+	MOVL	argsize+12(FP), CX;		\
 	MOVL	SP, DI;				\
 	REP;MOVSB;				\
 	/* call function */			\
@@ -515,10 +535,10 @@ TEXT NAME(SB), WRAPPER, $MAXSIZE-28;		\
 	PCDATA  $PCDATA_StackMapIndex, $0;	\
 	CALL	AX;				\
 	/* copy return values back */		\
-	MOVL	stackArgsType+0(FP), DX;		\
-	MOVL	stackArgs+8(FP), DI;		\
-	MOVL	stackArgsSize+12(FP), CX;		\
-	MOVL	stackRetOffset+16(FP), BX;		\
+	MOVL	argtype+0(FP), DX;		\
+	MOVL	argptr+8(FP), DI;		\
+	MOVL	argsize+12(FP), CX;		\
+	MOVL	retoffset+16(FP), BX;		\
 	MOVL	SP, SI;				\
 	ADDL	BX, DI;				\
 	ADDL	BX, SI;				\
@@ -530,12 +550,11 @@ TEXT NAME(SB), WRAPPER, $MAXSIZE-28;		\
 // separate function so it can allocate stack space for the arguments
 // to reflectcallmove. It does not follow the Go ABI; it expects its
 // arguments in registers.
-TEXT callRet<>(SB), NOSPLIT, $20-0
+TEXT callRet<>(SB), NOSPLIT, $16-0
 	MOVL	DX, 0(SP)
 	MOVL	DI, 4(SP)
 	MOVL	SI, 8(SP)
 	MOVL	CX, 12(SP)
-	MOVL	$0, 16(SP)
 	CALL	runtime·reflectcallmove(SB)
 	RET
 
@@ -600,43 +619,24 @@ TEXT runtime·jmpdefer(SB), NOSPLIT, $0-8
 	MOVL	0(DX), BX
 	JMP	BX	// but first run the deferred function
 
-// Save state of caller into g->sched,
-// but using fake PC from systemstack_switch.
-// Must only be called from functions with no locals ($0)
-// or else unwinding from systemstack_switch is incorrect.
-TEXT gosave_systemstack_switch<>(SB),NOSPLIT,$0
+// Save state of caller into g->sched.
+TEXT gosave<>(SB),NOSPLIT,$0
 	PUSHL	AX
 	PUSHL	BX
 	get_tls(BX)
 	MOVL	g(BX), BX
 	LEAL	arg+0(FP), AX
 	MOVL	AX, (g_sched+gobuf_sp)(BX)
-	MOVL	$runtime·systemstack_switch(SB), AX
+	MOVL	-4(AX), AX
 	MOVL	AX, (g_sched+gobuf_pc)(BX)
 	MOVL	$0, (g_sched+gobuf_ret)(BX)
 	// Assert ctxt is zero. See func save.
 	MOVL	(g_sched+gobuf_ctxt)(BX), AX
 	TESTL	AX, AX
 	JZ	2(PC)
-	CALL	runtime·abort(SB)
+	CALL	runtime·badctxt(SB)
 	POPL	BX
 	POPL	AX
-	RET
-
-// func asmcgocall_no_g(fn, arg unsafe.Pointer)
-// Call fn(arg) aligned appropriately for the gcc ABI.
-// Called on a system stack, and there may be no g yet (during needm).
-TEXT ·asmcgocall_no_g(SB),NOSPLIT,$0-8
-	MOVL	fn+0(FP), AX
-	MOVL	arg+4(FP), BX
-	MOVL	SP, DX
-	SUBL	$32, SP
-	ANDL	$~15, SP	// alignment, perhaps unnecessary
-	MOVL	DX, 8(SP)	// save old SP
-	MOVL	BX, 0(SP)	// first argument in x86-32 ABI
-	CALL	AX
-	MOVL	8(SP), DX
-	MOVL	DX, SP
 	RET
 
 // func asmcgocall(fn, arg unsafe.Pointer) int32
@@ -663,7 +663,7 @@ TEXT ·asmcgocall(SB),NOSPLIT,$0-12
 	JEQ	noswitch
 	CMPL	DI, m_gsignal(BP)
 	JEQ	noswitch
-	CALL	gosave_systemstack_switch<>(SB)
+	CALL	gosave<>(SB)
 	get_tls(CX)
 	MOVL	SI, g(CX)
 	MOVL	(g_sched+gobuf_sp)(SI), SP
@@ -1311,7 +1311,7 @@ TEXT _cgo_topofstack(SB),NOSPLIT,$0
 
 // The top-most function running on a goroutine
 // returns to goexit+PCQuantum.
-TEXT runtime·goexit(SB),NOSPLIT|TOPFRAME,$0-0
+TEXT runtime·goexit(SB),NOSPLIT,$0-0
 	BYTE	$0x90	// NOP
 	CALL	runtime·goexit1(SB)	// does not return
 	// traceback from goexit1 must hit code range of goexit
@@ -1473,10 +1473,6 @@ TEXT runtime·panicSlice3CU(SB),NOSPLIT,$0-8
 	MOVL	AX, x+0(FP)
 	MOVL	CX, y+4(FP)
 	JMP	runtime·goPanicSlice3CU(SB)
-TEXT runtime·panicSliceConvert(SB),NOSPLIT,$0-8
-	MOVL	DX, x+0(FP)
-	MOVL	BX, y+4(FP)
-	JMP	runtime·goPanicSliceConvert(SB)
 
 // Extended versions for 64-bit indexes.
 TEXT runtime·panicExtendIndex(SB),NOSPLIT,$0-12

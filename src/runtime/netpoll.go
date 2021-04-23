@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || (js && wasm) || linux || netbsd || openbsd || solaris || windows
 // +build aix darwin dragonfly freebsd js,wasm linux netbsd openbsd solaris windows
 
 package runtime
@@ -22,9 +21,6 @@ import (
 // func netpollopen(fd uintptr, pd *pollDesc) int32
 //     Arm edge-triggered notifications for fd. The pd argument is to pass
 //     back to netpollready when fd is ready. Return an errno value.
-//
-// func netpollclose(fd uintptr) int32
-//     Disable notifications for fd. Return an errno value.
 //
 // func netpoll(delta int64) gList
 //     Poll the network. If delta < 0, block indefinitely. If delta == 0,
@@ -165,12 +161,9 @@ func poll_runtime_pollOpen(fd uintptr) (*pollDesc, int) {
 	pd.self = pd
 	unlock(&pd.lock)
 
-	errno := netpollopen(fd, pd)
-	if errno != 0 {
-		pollcache.free(pd)
-		return nil, int(errno)
-	}
-	return pd, 0
+	var errno int32
+	errno = netpollopen(fd, pd)
+	return pd, int(errno)
 }
 
 //go:linkname poll_runtime_pollClose internal/poll.runtime_pollClose

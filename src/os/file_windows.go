@@ -279,11 +279,10 @@ func rename(oldname, newname string) error {
 }
 
 // Pipe returns a connected pair of Files; reads from r return bytes written to w.
-// It returns the files and an error, if any. The Windows handles underlying
-// the returned files are marked as inheritable by child processes.
+// It returns the files and an error, if any.
 func Pipe() (r *File, w *File, err error) {
 	var p [2]syscall.Handle
-	e := syscall.Pipe(p[:])
+	e := syscall.CreatePipe(&p[0], &p[1], nil, 0)
 	if e != nil {
 		return nil, nil, NewSyscallError("pipe", e)
 	}

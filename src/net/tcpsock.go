@@ -6,7 +6,6 @@ package net
 
 import (
 	"context"
-	"internal/itoa"
 	"io"
 	"os"
 	"syscall"
@@ -32,9 +31,9 @@ func (a *TCPAddr) String() string {
 	}
 	ip := ipEmptyString(a.IP)
 	if a.Zone != "" {
-		return JoinHostPort(ip+"%"+a.Zone, itoa.Itoa(a.Port))
+		return JoinHostPort(ip+"%"+a.Zone, itoa(a.Port))
 	}
-	return JoinHostPort(ip, itoa.Itoa(a.Port))
+	return JoinHostPort(ip, itoa(a.Port))
 }
 
 func (a *TCPAddr) isWildcard() bool {

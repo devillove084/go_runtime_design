@@ -69,12 +69,11 @@ func TestQueryImport(t *testing.T) {
 	RootMode = NoRoot
 
 	ctx := context.Background()
-	rs := newRequirements(eager, nil, nil)
 
 	for _, tt := range importTests {
 		t.Run(strings.ReplaceAll(tt.path, "/", "_"), func(t *testing.T) {
 			// Note that there is no build list, so Import should always fail.
-			m, err := queryImport(ctx, tt.path, rs)
+			m, err := queryImport(ctx, tt.path)
 
 			if tt.err == "" {
 				if err != nil {

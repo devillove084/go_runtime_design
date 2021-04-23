@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build aix || darwin || dragonfly || freebsd || (js && wasm) || linux || netbsd || openbsd || solaris
 // +build aix darwin dragonfly freebsd js,wasm linux netbsd openbsd solaris
 
 package poll
@@ -231,7 +230,7 @@ func (fd *FD) ReadFrom(p []byte) (int, syscall.Sockaddr, error) {
 }
 
 // ReadMsg wraps the recvmsg network call.
-func (fd *FD) ReadMsg(p []byte, oob []byte, flags int) (int, int, int, syscall.Sockaddr, error) {
+func (fd *FD) ReadMsg(p []byte, oob []byte) (int, int, int, syscall.Sockaddr, error) {
 	if err := fd.readLock(); err != nil {
 		return 0, 0, 0, nil, err
 	}
@@ -240,7 +239,7 @@ func (fd *FD) ReadMsg(p []byte, oob []byte, flags int) (int, int, int, syscall.S
 		return 0, 0, 0, nil, err
 	}
 	for {
-		n, oobn, sysflags, sa, err := syscall.Recvmsg(fd.Sysfd, p, oob, flags)
+		n, oobn, flags, sa, err := syscall.Recvmsg(fd.Sysfd, p, oob, 0)
 		if err != nil {
 			if err == syscall.EINTR {
 				continue
@@ -253,7 +252,7 @@ func (fd *FD) ReadMsg(p []byte, oob []byte, flags int) (int, int, int, syscall.S
 			}
 		}
 		err = fd.eofError(n, err)
-		return n, oobn, sysflags, sa, err
+		return n, oobn, flags, sa, err
 	}
 }
 

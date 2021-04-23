@@ -5,9 +5,12 @@
 package sys
 
 const (
-	_ArchFamily          = WASM
-	_DefaultPhysPageSize = 65536
-	_PCQuantum           = 1
-	_MinFrameSize        = 0
-	_StackAlign          = PtrSize
+	ArchFamily          = WASM
+	BigEndian           = false
+	DefaultPhysPageSize = 65536
+	PCQuantum           = 1
+	Int64Align          = 8
+	MinFrameSize        = 0
 )
+
+type Uintreg uint64

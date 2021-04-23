@@ -115,8 +115,7 @@ func pluginftabverify(md *moduledata) {
 			entry2 = f2.entry
 		}
 		badtable = true
-		println("ftab entry", hex(entry), "/", hex(entry2), ": ",
-			name, "/", name2, "outside pc range:[", hex(md.minpc), ",", hex(md.maxpc), "], modulename=", md.modulename, ", pluginpath=", md.pluginpath)
+		println("ftab entry outside pc range: ", hex(entry), "/", hex(entry2), ": ", name, "/", name2)
 	}
 	if badtable {
 		throw("runtime: plugin has bad symbol table")

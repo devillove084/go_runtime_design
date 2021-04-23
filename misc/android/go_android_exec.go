@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"go/build"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -275,7 +276,7 @@ func adbCopyGoroot() error {
 	if err := syscall.Flock(int(stat.Fd()), syscall.LOCK_EX); err != nil {
 		return err
 	}
-	s, err := io.ReadAll(stat)
+	s, err := ioutil.ReadAll(stat)
 	if err != nil {
 		return err
 	}
@@ -293,7 +294,7 @@ func adbCopyGoroot() error {
 	goroot := runtime.GOROOT()
 	// Build go for android.
 	goCmd := filepath.Join(goroot, "bin", "go")
-	tmpGo, err := os.CreateTemp("", "go_android_exec-cmd-go-*")
+	tmpGo, err := ioutil.TempFile("", "go_android_exec-cmd-go-*")
 	if err != nil {
 		return err
 	}
